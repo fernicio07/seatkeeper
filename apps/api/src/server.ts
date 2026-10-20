@@ -13,9 +13,9 @@ const PORT = Number(process.env.API_PORT ?? 4000);
 const TTL_MS = Number(process.env.CHECKOUT_TTL_MS ?? 5 * 60 * 1000);
 const DEV = process.env.NODE_ENV !== 'production';
 
-const inventory = new StubInventoryService();
-const payments = new StubPaymentGateway();
 const clock = new OffsetClock();
+const inventory = new StubInventoryService(clock);
+const payments = new StubPaymentGateway();
 
 const app = buildApp(
   {

@@ -185,3 +185,116 @@ describe('duplicate completion (two surfaces, one session)', () => {
     expect(replay.json()).toMatchObject({ replayed: true, session: { status: 'COMPLETED' } });
   });
 });
+
+// ─── Review fixes: inventory exclusivity, hold lifecycle, resilience ─────────
+describe('inventory: one live hold per seat', () => {
+  const create = (t: ReturnType<typeof buildTestApp>) =>
+    t.app.inject({ method: 'POST', url: '/checkout', payload: { listingId: 'lst_heat_1' } });
+
+  it('a second fan gets 409 SEAT_UNAVAILABLE while the first holds the seat', async () => {
+    const t = buildTestApp();
+    expect((await create(t)).statusCode).toBe(201);
+    const second = await create(t);
+    expect(second.statusCode).toBe(409);
+    expect(second.json().error).toBe('SEAT_UNAVAILABLE');
+  });
+
+  it('an abandoned hold frees the seat at expiresAt even if nobody re-loads that session', async () => {
+    const t = buildTestApp();
+    await create(t);
+    t.clock.advance(TTL_MS); // fan A walked away; their session is never fetched again
+    expect((await create(t)).statusCode).toBe(201);
+  });
+
+  it('PENDING_PAYMENT freezes the hold: it survives past expiresAt and still blocks others', async () => {
+    const t = buildTestApp();
+    const s = await startCheckout(t);
+    await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/pay`, payload: { expectedVersion: 1, acceptedPrice: 18500 } });
+    t.clock.advance(TTL_MS * 2);
+    expect(await t.inventory.isHoldValid(s.inventoryHoldId)).toBe(true);
+    expect((await create(t)).statusCode).toBe(409);
+  });
+
+  it('COMPLETED confirms the sale: the seat stays unavailable forever', async () => {
+    const t = buildTestApp();
+    const s = await startCheckout(t);
+    await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/pay`, payload: { expectedVersion: 1, acceptedPrice: 18500 } });
+    await t.app.inject({
+      method: 'POST',
+      url: `/checkout/${s.id}/complete`,
+      payload: { expectedVersion: 2, idempotencyKey: s.idempotencyKey, acceptedPrice: 18500 },
+    });
+    t.clock.advance(TTL_MS * 10);
+    expect(await t.inventory.isAvailable('lst_heat_1')).toBe(false);
+  });
+
+  it('FAILED releases the seat for the next fan', async () => {
+    const t = buildTestApp();
+    const s = await startCheckout(t);
+    t.payments.nextOutcome = 'declined';
+    await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/pay`, payload: { expectedVersion: 1, acceptedPrice: 18500 } });
+    await t.app.inject({
+      method: 'POST',
+      url: `/checkout/${s.id}/complete`,
+      payload: { expectedVersion: 2, idempotencyKey: s.idempotencyKey, acceptedPrice: 18500 },
+    });
+    expect((await create(t)).statusCode).toBe(201);
+  });
+
+  it('GET /listings/:id reports availability', async () => {
+    const t = buildTestApp();
+    expect((await t.app.inject({ method: 'GET', url: '/listings/lst_heat_1' })).json().available).toBe(true);
+    await create(t);
+    expect((await t.app.inject({ method: 'GET', url: '/listings/lst_heat_1' })).json().available).toBe(false);
+  });
+});
+
+describe('resilience', () => {
+  it('a failing side effect after a committed write does not fail the request', async () => {
+    const t = buildTestApp();
+    const s = await startCheckout(t);
+    jest.spyOn(t.inventory, 'freeze').mockRejectedValueOnce(new Error('inventory down'));
+    const err = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const res = await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/pay`, payload: { expectedVersion: 1, acceptedPrice: 18500 } });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().session.status).toBe('PENDING_PAYMENT');
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('inventory.freeze'), expect.any(Error));
+    err.mockRestore();
+  });
+});
+
+describe('analytics', () => {
+  it('GET with ?surface tracks surface_resumed', async () => {
+    const t = buildTestApp();
+    const s = await startCheckout(t);
+    await t.app.inject({ method: 'GET', url: `/checkout/${s.id}?surface=mobile` });
+    expect(t.analytics.events).toContainEqual(
+      expect.objectContaining({ name: 'surface_resumed', sessionId: s.id, props: expect.objectContaining({ surface: 'mobile' }) }),
+    );
+  });
+
+  it('a duplicate complete tracks checkout_replayed', async () => {
+    const t = buildTestApp();
+    const s = await startCheckout(t);
+    await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/pay`, payload: { expectedVersion: 1, acceptedPrice: 18500 } });
+    const body = { expectedVersion: 2, idempotencyKey: s.idempotencyKey, acceptedPrice: 18500 };
+    await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/complete`, payload: body });
+    await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/complete`, payload: body });
+    expect(t.analytics.events.filter((e) => e.name === 'checkout_replayed')).toHaveLength(1);
+  });
+
+  it('POST /events accepts whitelisted client events and rejects anything else', async () => {
+    const t = buildTestApp();
+    const ok = await t.app.inject({
+      method: 'POST',
+      url: '/events',
+      payload: { name: 'price_banner_acknowledged', sessionId: 'cs_x', surface: 'web', props: { from: 1, to: 2 } },
+    });
+    expect(ok.statusCode).toBe(204);
+    expect(t.analytics.events).toContainEqual(expect.objectContaining({ name: 'price_banner_acknowledged' }));
+    const bad = await t.app.inject({ method: 'POST', url: '/events', payload: { name: 'drop_tables', sessionId: 'x', surface: 'web' } });
+    expect(bad.statusCode).toBe(400);
+  });
+});

@@ -173,3 +173,35 @@ test failed only at the `orderId` assertion), and green after: 42 API + 12 share
 typecheck clean. `scripts/demo-api.sh`: parallel completes → both 200, same order id, one
 `[replayed]`. Browser side-by-side: both "Place order" buttons clicked in the same tick → web
 "Order confirmed", mobile "Already purchased… charged once", identical order id.
+
+## Pre-step-8 code review
+
+**AI reviewed the whole codebase at my request** and verified two must-fix bugs against the running
+server: two fans could hold (and buy) the same seat, and a fan was charged after their hold was
+revoked mid-payment. 15 items total; I assigned ownership for each.
+
+**Decided by me:** accept abandoned holds as a tradeoff (released at expiry, no CANCELLED state);
+locked the analytics event list (`surface_resumed`, `price_banner_shown`,
+`price_banner_acknowledged`, `checkout_replayed`). My items, still to do: `!holdValid` in
+PENDING_PAYMENT → FAILED before charging; suppress/map raw error codes in `CheckoutPanel`;
+symmetric FAILED replay.
+
+**Fixed by AI (reviewed by me):**
+- Exclusive holds + `SEAT_UNAVAILABLE` (409); landing page server-renders availability; restart
+  into an unavailable seat bounces to the listing with an explanation.
+- Hold lifecycle `active → frozen → sold | released` with `freeze`/`confirm`. This revises the
+  earlier "holds have no TTL" call: with exclusivity plus lazy session expiry, an abandoned hold
+  would otherwise lock the seat indefinitely.
+- Best-effort side effects with logging; `load()` returns 503 `BUSY` with the last stored session
+  instead of throwing.
+- Analytics plumbing: `surface_resumed` (GET `?surface=`), `checkout_replayed`, whitelisted
+  `POST /events`, banner events wired with a Strict-Mode-safe once-per-change guard.
+- `app/error.tsx` boundary; pending copy on pay/place-order buttons; `/dev/reset` + demo-page
+  reset link; demo script resets between scenarios and adds "two fans, one seat".
+
+**Validation:** 15 new API tests (exclusivity, abandoned-hold release, freeze survives expiry,
+confirm is permanent, FAILED releases, availability, side-effect failure → still 200, analytics,
+events whitelist) + 5 inventory stub tests. All 41 API + 12 shared tests pass; typecheck clean.
+Demo script: all 4 scenarios correct. Browser: landing shows "Seat unavailable" while held; banner
+fired `price_banner_shown` exactly once and `price_banner_acknowledged` on accept; with the API
+stopped, the checkout page rendered the error boundary.

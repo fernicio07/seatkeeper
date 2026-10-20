@@ -12,10 +12,10 @@ import type { PaymentGateway } from '../services/interfaces';
 /** Fully wired app with controllable stubs exposed for assertions.
  *  `payments` swaps the gateway the service uses (dev routes keep the stub). */
 export function buildTestApp(opts: { payments?: PaymentGateway } = {}) {
-  const inventory = new StubInventoryService();
+  const clock = new StubClock(T0);
+  const inventory = new StubInventoryService(clock);
   const payments = new StubPaymentGateway();
   const analytics = new InMemoryAnalyticsSink();
-  const clock = new StubClock(T0);
   const app = buildApp(
     { store: new InMemorySessionStore(), inventory, payments: opts.payments ?? payments, analytics, clock, ttlMs: TTL_MS },
     { dev: { inventory, payments, clock } },

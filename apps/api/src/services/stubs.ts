@@ -54,12 +54,17 @@ export const DEMO_LISTINGS: Listing[] = [
   },
 ];
 
+type HoldState = 'active' | 'frozen' | 'sold' | 'released';
+
 export class StubInventoryService implements InventoryService {
   private listings = new Map<string, Listing>();
-  private holds = new Map<string, { listingId: string; active: boolean }>();
+  private holds = new Map<string, { listingId: string; state: HoldState; expiresAt: number }>();
 
-  constructor(listings: Listing[] = DEMO_LISTINGS) {
-    for (const l of listings) this.listings.set(l.id, { ...l });
+  constructor(
+    private clock: Clock,
+    private seed: Listing[] = DEMO_LISTINGS,
+  ) {
+    this.reset();
   }
 
   async getListing(listingId: string): Promise<Listing | null> {
@@ -67,25 +72,52 @@ export class StubInventoryService implements InventoryService {
     return l ? { ...l } : null;
   }
 
-  // Holds have no TTL of their own here: the session's expiresAt is the single
-  // authority on expiry. Two independent timers for one concept can disagree.
-  async hold(listingId: string): Promise<string> {
+  async isAvailable(listingId: string): Promise<boolean> {
+    return !this.blockingHold(listingId);
+  }
+
+  // Exclusive: one live hold (or sale) per seat. In a real store this check
+  // and the insert are one atomic operation (e.g. Redis SET NX PX); here there
+  // is no await between them, so it's atomic in single-threaded Node.
+  async hold(listingId: string, expiresAt: number): Promise<string | null> {
     if (!this.listings.has(listingId)) throw new Error(`Unknown listing ${listingId}`);
+    if (this.blockingHold(listingId)) return null;
     const holdId = `hold_${randomUUID()}`;
-    this.holds.set(holdId, { listingId, active: true });
+    this.holds.set(holdId, { listingId, state: 'active', expiresAt });
     return holdId;
+  }
+
+  async freeze(holdId: string): Promise<void> {
+    const h = this.holds.get(holdId);
+    if (h && this.isLive(h)) h.state = 'frozen';
+  }
+
+  async confirm(holdId: string): Promise<void> {
+    const h = this.holds.get(holdId);
+    if (h && h.state !== 'released') h.state = 'sold';
   }
 
   async release(holdId: string): Promise<void> {
     const h = this.holds.get(holdId);
-    if (h) h.active = false;
+    if (h && h.state !== 'sold') h.state = 'released';
   }
 
   async isHoldValid(holdId: string): Promise<boolean> {
-    return this.holds.get(holdId)?.active ?? false;
+    const h = this.holds.get(holdId);
+    return !!h && this.isLive(h);
   }
 
-  // --- demo / test controls (exposed via dev-only routes later) ---
+  private isLive(h: { state: HoldState; expiresAt: number }): boolean {
+    if (h.state === 'frozen' || h.state === 'sold') return true;
+    return h.state === 'active' && this.clock.now() < h.expiresAt;
+  }
+
+  private blockingHold(listingId: string) {
+    for (const h of this.holds.values()) if (h.listingId === listingId && this.isLive(h)) return h;
+    return undefined;
+  }
+
+  // --- demo / test controls (exposed via dev-only routes) ---
 
   setPrice(listingId: string, price: number): void {
     const l = this.listings.get(listingId);
@@ -96,7 +128,13 @@ export class StubInventoryService implements InventoryService {
   /** Simulate stale inventory: the seat was sold out from under the hold. */
   revokeHold(holdId: string): void {
     const h = this.holds.get(holdId);
-    if (h) h.active = false;
+    if (h) h.state = 'released';
+  }
+
+  /** Back to seed prices, no holds, nothing sold. */
+  reset(): void {
+    this.listings = new Map(this.seed.map((l) => [l.id, { ...l }]));
+    this.holds.clear();
   }
 }
 

@@ -21,9 +21,18 @@ export interface CheckoutDeps {
   analytics: AnalyticsSink;
   clock: Clock;
   ttlMs: number;
+  /** Where best-effort side-effect failures are reported. Defaults to console. */
+  logger?: { error(msg: string, err: unknown): void };
 }
 
-export type ServiceErrorCode = TransitionErrorCode | 'NOT_FOUND' | 'LISTING_NOT_FOUND';
+export type Surface = 'web' | 'mobile';
+
+export type ServiceErrorCode =
+  | TransitionErrorCode
+  | 'NOT_FOUND'
+  | 'LISTING_NOT_FOUND'
+  | 'SEAT_UNAVAILABLE' // another live hold or a sale blocks the seat
+  | 'BUSY'; // couldn't win a write after retries; session returned as last stored
 
 export type ServiceResult =
   | { ok: true; session: CheckoutSession; listing: Listing; replayed?: boolean }
@@ -42,14 +51,18 @@ export class CheckoutService {
     if (!listing) return { ok: false, error: 'LISTING_NOT_FOUND' };
 
     const now = clock.now();
+    const expiresAt = now + ttlMs;
+    const holdId = await inventory.hold(listingId, expiresAt);
+    if (!holdId) return { ok: false, error: 'SEAT_UNAVAILABLE', listing };
+
     const session = await store.create({
       id: `cs_${randomUUID()}`,
       listingId,
       priceAtStart: listing.price,
       currentPrice: listing.price,
       status: 'ACTIVE',
-      expiresAt: now + ttlMs,
-      inventoryHoldId: await inventory.hold(listingId),
+      expiresAt,
+      inventoryHoldId: holdId,
       version: 1,
       idempotencyKey: `idem_${randomUUID()}`,
       orderId: null,
@@ -66,9 +79,10 @@ export class CheckoutService {
    */
   async load(id: string): Promise<ServiceResult> {
     const { store, inventory, clock } = this.deps;
+    let stored: CheckoutSession | null = null;
 
     for (let attempt = 0; attempt < MAX_REFRESH_ATTEMPTS; attempt++) {
-      const stored = await store.get(id);
+      stored = await store.get(id);
       if (!stored) return { ok: false, error: 'NOT_FOUND' };
       const listing = await inventory.getListing(stored.listingId);
       if (!listing) return { ok: false, error: 'LISTING_NOT_FOUND', session: stored };
@@ -87,7 +101,18 @@ export class CheckoutService {
       }
       // Lost a race with another writer between get and CAS: re-read and retry.
     }
-    throw new Error(`Could not refresh session ${id} after ${MAX_REFRESH_ATTEMPTS} attempts`);
+    // Pathological contention. Still honour "every response carries the
+    // session": return the last stored copy, flagged so the client retries.
+    return { ok: false, error: 'BUSY', session: stored ?? undefined };
+  }
+
+  /** GET /checkout/:id — a load that's also a resume event for analytics. */
+  async resume(id: string, surface: Surface): Promise<ServiceResult> {
+    const result = await this.load(id);
+    if (result.ok) {
+      this.track('surface_resumed', id, { surface, status: result.session.status });
+    }
+    return result;
   }
 
   async pay(id: string, input: { expectedVersion: number; acceptedPrice: number }) {
@@ -114,7 +139,7 @@ export class CheckoutService {
       chargeId: 'dry-run',
     });
     if (!dryRun.ok) return { ok: false as const, error: dryRun.error, session: dryRun.session, listing };
-    if (sameState(session, dryRun.session)) return { ok: true as const, session, listing, replayed: true };
+    if (sameState(session, dryRun.session)) return this.replay(session, listing, 'COMPLETE');
 
     // Two concurrent completes can BOTH get past the dry run and reach this
     // line. Version CAS (in apply) guarantees one order; the per-session
@@ -144,7 +169,7 @@ export class CheckoutService {
 
       const result = transition(session, event);
       if (!result.ok) return { ok: false, error: result.error, session: result.session, listing };
-      if (sameState(session, result.session)) return { ok: true, session, listing, replayed: true };
+      if (sameState(session, result.session)) return this.replay(session, listing, event.type);
 
       const saved = await this.deps.store.compareAndSet(id, session.version, result.session);
       if (saved) {
@@ -170,23 +195,45 @@ export class CheckoutService {
     };
   }
 
-  /** Side effects keyed off status changes, run only after a write succeeded. */
+  private replay(session: CheckoutSession, listing: Listing, eventType: CheckoutEvent['type']): ServiceResult {
+    this.track('checkout_replayed', session.id, { event: eventType, status: session.status });
+    return { ok: true, session, listing, replayed: true };
+  }
+
+  private track(name: string, sessionId: string, props?: Record<string, unknown>) {
+    this.deps.analytics.track({ name, sessionId, at: this.deps.clock.now(), props });
+  }
+
+  /**
+   * Side effects keyed off status changes, run only after a write succeeded.
+   * Best-effort: the state change is already committed, so a failing side
+   * effect must not turn the response into a 500 (the client would retry an
+   * operation that actually worked). Production: an outbox processed with
+   * retries, so a missed release/confirm is eventually applied.
+   */
   private async afterWrite(before: CheckoutSession, after: CheckoutSession): Promise<void> {
-    const { inventory, analytics, clock } = this.deps;
-    const at = clock.now();
-    const track = (name: string, props?: Record<string, unknown>) =>
-      analytics.track({ name, sessionId: after.id, at, props });
+    const { inventory } = this.deps;
+    const effect = async (name: string, fn: () => unknown) => {
+      try {
+        await fn();
+      } catch (err) {
+        (this.deps.logger ?? console).error(`[checkout] side effect "${name}" failed for ${after.id}`, err);
+      }
+    };
 
     if (before.currentPrice !== after.currentPrice) {
-      track('price_changed', { from: before.currentPrice, to: after.currentPrice });
+      await effect('track price_changed', () =>
+        this.track('price_changed', after.id, { from: before.currentPrice, to: after.currentPrice }),
+      );
     }
     if (before.status === after.status) return;
 
-    track(`status_${after.status.toLowerCase()}`, { from: before.status });
-    // EXPIRED and FAILED give the seat back. COMPLETED keeps it (in a real
-    // system the hold converts to a sale here).
+    await effect('track status', () => this.track(`status_${after.status.toLowerCase()}`, after.id, { from: before.status }));
+    const holdId = after.inventoryHoldId;
+    if (after.status === 'PENDING_PAYMENT') await effect('inventory.freeze', () => inventory.freeze(holdId));
+    if (after.status === 'COMPLETED') await effect('inventory.confirm', () => inventory.confirm(holdId));
     if (after.status === 'EXPIRED' || after.status === 'FAILED') {
-      await inventory.release(after.inventoryHoldId);
+      await effect('inventory.release', () => inventory.release(holdId));
     }
   }
 }

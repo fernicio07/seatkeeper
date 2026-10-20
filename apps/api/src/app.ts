@@ -1,5 +1,11 @@
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
-import { CheckoutService, type CheckoutDeps, type ServiceErrorCode, type ServiceResult } from './domain/checkout-service';
+import {
+  CheckoutService,
+  type CheckoutDeps,
+  type ServiceErrorCode,
+  type ServiceResult,
+  type Surface,
+} from './domain/checkout-service';
 import type { StubInventoryService, StubPaymentGateway, OffsetClock, StubClock } from './services/stubs';
 
 // HTTP is a thin adapter: validate input, call the service, map the result.
@@ -15,6 +21,8 @@ const HTTP_STATUS: Record<ServiceErrorCode, number> = {
   INVALID_TRANSITION: 409,
   IDEMPOTENCY_KEY_MISMATCH: 422,
   SESSION_EXPIRED: 410,
+  SEAT_UNAVAILABLE: 409,
+  BUSY: 503,
 };
 
 // Every response — success or failure — carries the current session when one
@@ -69,9 +77,13 @@ export function buildApp(deps: CheckoutDeps, opts: { dev?: DevControls; logger?:
 
   // Resume. Safe to call from any surface, any number of times: it only
   // reconciles the session with the world (expiry, price, hold).
-  app.get<{ Params: { id: string } }>('/checkout/:id', {
-    schema: { params: idParams },
-    handler: async (req, reply) => send(reply, await checkout.load(req.params.id), now()),
+  app.get<{ Params: { id: string }; Querystring: { surface?: Surface } }>('/checkout/:id', {
+    schema: {
+      params: idParams,
+      querystring: { type: 'object', properties: { surface: { enum: ['web', 'mobile'] } } },
+    },
+    handler: async (req, reply) =>
+      send(reply, await checkout.resume(req.params.id, req.query.surface ?? 'web'), now()),
   });
 
   app.post<{ Params: { id: string }; Body: { expectedVersion: number; acceptedPrice: number } }>(
@@ -121,7 +133,33 @@ export function buildApp(deps: CheckoutDeps, opts: { dev?: DevControls; logger?:
     schema: { params: idParams },
     handler: async (req, reply) => {
       const listing = await deps.inventory.getListing(req.params.id);
-      return listing ? { listing } : reply.code(404).send({ error: 'LISTING_NOT_FOUND' });
+      if (!listing) return reply.code(404).send({ error: 'LISTING_NOT_FOUND' });
+      return { listing, available: await deps.inventory.isAvailable(listing.id) };
+    },
+  });
+
+  // Client-side analytics (moments only the UI sees). Whitelisted names, so
+  // this can't become a free-form write endpoint. 204: fire-and-forget.
+  app.post<{
+    Body: { name: string; sessionId: string; surface: Surface; props?: Record<string, unknown> };
+  }>('/events', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['name', 'sessionId', 'surface'],
+        additionalProperties: false,
+        properties: {
+          name: { enum: ['price_banner_shown', 'price_banner_acknowledged'] },
+          sessionId: { type: 'string', minLength: 1, maxLength: 64 },
+          surface: { enum: ['web', 'mobile'] },
+          props: { type: 'object' },
+        },
+      },
+    },
+    handler: async (req, reply) => {
+      const { name, sessionId, surface, props } = req.body;
+      deps.analytics.track({ name, sessionId, at: now(), props: { ...props, surface } });
+      return reply.code(204).send();
     },
   });
 
@@ -163,8 +201,18 @@ function registerDevRoutes(app: FastifyInstance, dev: DevControls) {
     },
   });
 
-  app.post<{ Params: { holdId: string } }>('/dev/holds/:holdId/revoke', async (req) => {
-    dev.inventory.revokeHold(req.params.holdId);
-    return { revoked: req.params.holdId };
+  app.post<{ Params: { holdId: string } }>('/dev/holds/:holdId/revoke', {
+    schema: { params: { type: 'object', required: ['holdId'], properties: { holdId: { type: 'string' } } } },
+    handler: async (req) => {
+      dev.inventory.revokeHold(req.params.holdId);
+      return { revoked: req.params.holdId };
+    },
+  });
+
+  // Seats back on sale at seed prices — so the demo can be run repeatedly.
+  app.post('/dev/reset', async () => {
+    dev.inventory.reset();
+    dev.payments.nextOutcome = 'succeeded';
+    return { reset: true };
   });
 }

@@ -5,10 +5,21 @@ import type { Listing } from '@seatkeeper/shared';
 
 export interface InventoryService {
   getListing(listingId: string): Promise<Listing | null>;
-  /** Reserve the seat for this checkout. Returns a holdId. */
-  hold(listingId: string): Promise<string>;
+  /** True when no live hold or sale blocks the seat. */
+  isAvailable(listingId: string): Promise<boolean>;
+  /**
+   * Reserve the seat until `expiresAt` (the session's deadline — the session
+   * stays the authority; the hold just mirrors it so an abandoned checkout
+   * frees the seat even if nobody ever re-loads that session).
+   * Returns a holdId, or null if the seat is already held or sold.
+   */
+  hold(listingId: string, expiresAt: number): Promise<string | null>;
+  /** Payment in flight: the hold stops expiring until confirm() or release(). */
+  freeze(holdId: string): Promise<void>;
+  /** The hold becomes a sale. The seat is permanently unavailable. */
+  confirm(holdId: string): Promise<void>;
   release(holdId: string): Promise<void>;
-  /** False if the hold was released or revoked (e.g. seat sold elsewhere). */
+  /** False if released, revoked, or (unfrozen and) past its expiry. */
   isHoldValid(holdId: string): Promise<boolean>;
 }
 

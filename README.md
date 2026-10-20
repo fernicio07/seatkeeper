@@ -28,17 +28,42 @@ npm run typecheck
 
 | Route | Purpose |
 |---|---|
-| `POST /checkout` `{listingId}` | Create session, take inventory hold → 201 |
-| `GET /checkout/:id` | Resume: evaluate (expiry, price, hold) + persist, return fresh session |
-| `POST /checkout/:id/pay` `{expectedVersion, acceptedPrice}` | ACTIVE → PENDING_PAYMENT |
-| `POST /checkout/:id/complete` `{expectedVersion, idempotencyKey}` | Charge, → COMPLETED / FAILED |
+| `POST /checkout` `{listingId}` | Create session, take an exclusive inventory hold → 201 (409 `SEAT_UNAVAILABLE` if held/sold) |
+| `GET /checkout/:id?surface=web\|mobile` | Resume: evaluate (expiry, price, hold) + persist, return fresh session |
+| `POST /checkout/:id/pay` `{expectedVersion, acceptedPrice}` | ACTIVE → PENDING_PAYMENT (freezes the hold) |
+| `POST /checkout/:id/complete` `{expectedVersion, idempotencyKey, acceptedPrice}` | Charge, → COMPLETED (confirms the sale) / FAILED (releases) |
+| `GET /listings/:id` | Listing + `available` (helper for the landing page) |
+| `POST /events` | Whitelisted client analytics events → 204 |
 
 Every response, success or error, includes the current `session` so a client can always re-render
 from server truth. Errors: 404 not found · 409 `VERSION_CONFLICT` / `PRICE_MISMATCH` /
-`INVALID_TRANSITION` · 410 `SESSION_EXPIRED` · 422 `IDEMPOTENCY_KEY_MISMATCH` · 400 bad body.
+`INVALID_TRANSITION` / `SEAT_UNAVAILABLE` · 410 `SESSION_EXPIRED` · 422 `IDEMPOTENCY_KEY_MISMATCH` ·
+503 `BUSY` (write contention after retries; still carries the last stored session) · 400 bad body.
 
 Dev-only levers (not registered in production): `POST /dev/listings/:id/price`,
-`/dev/clock/advance`, `/dev/payments/next-outcome`, `/dev/holds/:holdId/revoke`.
+`/dev/clock/advance`, `/dev/payments/next-outcome`, `/dev/holds/:holdId/revoke`, `/dev/reset`
+(seat back on sale; also a "Reset demo" link on the dev landing page).
+
+### Inventory: exclusive holds with a lifecycle
+
+One live hold or sale per seat (`hold()` returns null → `SEAT_UNAVAILABLE`).
+
+`active (until session.expiresAt) → frozen (PENDING_PAYMENT) → sold (COMPLETED)`, or `→ released`
+(EXPIRED / FAILED / revoked).
+
+The hold mirrors the session's deadline instead of having no expiry of its own. Session expiry is
+lazy, so without that an abandoned checkout would lock the seat until someone happened to re-load
+that session: stale inventory in the other direction. Leaving a checkout doesn't release the seat
+early; the hold frees it at `expiresAt` (accepted tradeoff, no CANCELLED state).
+
+Side effects (freeze / confirm / release / analytics) run after a committed write and are
+best-effort: a failure is logged, never turned into a 500 for an operation that succeeded.
+Production: an outbox with retries.
+
+### Analytics
+Server: `checkout_started`, `status_*`, `price_changed`, `surface_resumed` (with surface),
+`checkout_replayed`. Client (via `POST /events`): `price_banner_shown` (once per distinct change,
+guarded against Strict Mode double effects), `price_banner_acknowledged`.
 
 ### Layers
 - `domain/checkout-machine.ts` — pure `evaluate()` / `transition()`: decides.

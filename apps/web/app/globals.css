@@ -121,3 +121,6 @@ body {
 .price-change .text-link { justify-self: center; margin-top: 8px; }
 .confirming { margin: 0; color: var(--muted); }
 .order-id { margin: 0; font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--text); }
+.dev-reset { padding: 0 24px 20px; text-align: center; }
+.dev-reset .text-link { background: none; border: 0; cursor: pointer; font: inherit; font-size: 0.8rem; text-decoration: underline; }
+.error-title { margin: 0; font-size: 1.25rem; }

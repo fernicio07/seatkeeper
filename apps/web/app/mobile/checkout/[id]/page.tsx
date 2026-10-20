@@ -8,7 +8,7 @@ import { fetchCheckout } from '@/lib/api-server';
 // exactly like a native app opening a universal link would.
 export default async function MobileCheckoutPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const data = await fetchCheckout(id);
+  const data = await fetchCheckout(id, 'mobile');
   if (!data?.session || !data.listing) notFound();
 
   return (

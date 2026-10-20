@@ -17,7 +17,7 @@ export default async function CheckoutPage({
 }) {
   const { id } = await params;
   const embedded = (await searchParams).embed === '1';
-  const data = await fetchCheckout(id);
+  const data = await fetchCheckout(id, 'web');
   if (!data?.session || !data.listing) notFound();
 
   return (

@@ -65,14 +65,14 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
   const inFlight = useRef<Promise<void> | null>(null);
   const refresh = useCallback(() => {
     inFlight.current ??= checkoutApi
-      .get(session.id)
+      .get(session.id, surface)
       .then(apply)
       .catch(() => setError('NETWORK_ERROR'))
       .finally(() => {
         inFlight.current = null;
       });
     return inFlight.current;
-  }, [session.id, apply]);
+  }, [session.id, surface, apply]);
 
   // Re-validate whenever this surface becomes active again. While it was in
   // the background the other surface may have paid, completed, or the price
@@ -121,6 +121,8 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
           toPrice={view.toPrice}
           onAcknowledge={acknowledge}
           disabled={!interactive}
+          sessionId={session.id}
+          surface={surface}
         />
       )}
 
@@ -137,7 +139,7 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
             )
           }
         >
-          Continue to payment
+          {busy ? 'Holding your price…' : 'Continue to payment'}
         </button>
       )}
 
@@ -159,7 +161,7 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
               })
             }
           >
-            Place order · {formatMoney(session.currentPrice)}
+            {busy ? 'Placing order…' : `Place order · ${formatMoney(session.currentPrice)}`}
           </button>
         </>
       )}
