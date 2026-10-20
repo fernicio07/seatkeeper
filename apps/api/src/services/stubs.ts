@@ -29,6 +29,18 @@ export class StubClock implements Clock {
   }
 }
 
+/** Real time plus an offset: the dev server runs on wall-clock time, but the
+ *  demo can "fast-forward" past expiresAt without waiting minutes. */
+export class OffsetClock implements Clock {
+  private offsetMs = 0;
+  now(): number {
+    return Date.now() + this.offsetMs;
+  }
+  advance(ms: number): void {
+    this.offsetMs += ms;
+  }
+}
+
 export const DEMO_LISTINGS: Listing[] = [
   {
     id: 'lst_knicks_1',

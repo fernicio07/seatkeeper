@@ -17,9 +17,37 @@ apps/web          (step 3) Next.js web checkout + simulated mobile route
 
 ```bash
 npm install
-npm test          # Jest across workspaces
+npm run dev -w @seatkeeper/api   # API on http://localhost:4000
+./scripts/demo-api.sh            # walks price change, expiry, double-complete via curl
+npm test                         # Jest across workspaces
 npm run typecheck
 ```
+
+## API
+
+| Route | Purpose |
+|---|---|
+| `POST /checkout` `{listingId}` | Create session, take inventory hold → 201 |
+| `GET /checkout/:id` | Resume: evaluate (expiry, price, hold) + persist, return fresh session |
+| `POST /checkout/:id/pay` `{expectedVersion, acceptedPrice}` | ACTIVE → PENDING_PAYMENT |
+| `POST /checkout/:id/complete` `{expectedVersion, idempotencyKey}` | Charge, → COMPLETED / FAILED |
+
+Every response, success or error, includes the current `session` so a client can always re-render
+from server truth. Errors: 404 not found · 409 `VERSION_CONFLICT` / `PRICE_MISMATCH` /
+`INVALID_TRANSITION` · 410 `SESSION_EXPIRED` · 422 `IDEMPOTENCY_KEY_MISMATCH` · 400 bad body.
+
+Dev-only levers (not registered in production): `POST /dev/listings/:id/price`,
+`/dev/clock/advance`, `/dev/payments/next-outcome`, `/dev/holds/:holdId/revoke`.
+
+### Layers
+- `domain/checkout-machine.ts` — pure `evaluate()` / `transition()`: decides.
+- `domain/checkout-service.ts` — imperative shell: gathers facts, calls the machine, persists with
+  CAS, runs side effects (hold release, charge, analytics) only after a successful write.
+- `app.ts` — HTTP adapter: JSON-schema validation, error-code → status mapping. No rules.
+
+**Charge safety:** `complete` dry-runs the transition with a hypothetical success *before*
+calling the gateway, so we never charge for a session that is ACTIVE, expired, stale, or already
+completed. The gateway call itself is keyed by the session's `idempotencyKey`.
 
 ## Session state model
 

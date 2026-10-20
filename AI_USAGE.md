@@ -41,3 +41,22 @@ Updated at every commit.
 - AI wrote 4 regression tests encoding the review findings *before* my fix; they failed against
   the first draft and pass against the revision. 5 store tests pass. `tsc --noEmit` clean.
 - Full transition-table coverage is deferred to step 8 (left as `it.todo`).
+
+## Step 2 — API routes
+
+**Scaffolded by AI (reviewed by me):**
+- `CheckoutService` (functional-core / imperative-shell around my machine): `load()` evaluates +
+  persists on every read; `apply()` runs transition + CAS; side effects only after a successful write.
+- Dry-run-before-charge in `complete` (pure transition with hypothetical success gates the gateway call).
+- Fastify app with JSON-schema validation, error → HTTP mapping, dev-only demo routes, `OffsetClock`.
+- Route smoke tests via `app.inject()`; `scripts/demo-api.sh` curl walkthrough.
+- Tooling fix: Jest runs with `--experimental-vm-modules` because Fastify's `inject()` pulls in
+  ESM-only `cookie@2`.
+
+**Observed while validating:** sequential double-complete already replays correctly because of
+the replay-first guard order in my `transition()`. What remains for step 7 is the *concurrent*
+race (both requests past the dry run before either writes), replay signaling, and tests.
+
+**Validation:** 15 tests pass (store, machine regressions, 6 route tests), `tsc` clean; ran the
+server and walked all three scenarios with `scripts/demo-api.sh` — output matched the
+transition table by hand.
