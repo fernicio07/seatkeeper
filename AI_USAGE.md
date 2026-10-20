@@ -321,3 +321,16 @@ funnel classified as cross-surface), T8 (drop copy, pay blocked), T11 (abandoned
 with no reload of that session), T12 race variant (bounce message), T14 (decline copy, seat
 released). The remaining tests were browser-verified earlier, after the latest change to their code
 paths.
+
+## Node version pin (`.nvmrc`)
+
+**My request:** an `.nvmrc` so `nvm use` works.
+
+**AI checked the claimed version before pinning it, and the claim was wrong:** `engines` and the
+README said Node 22+, but nothing had run on 22. On Node 22.23 the route tests fail: Jest can't
+`require()` the ESM-only `cookie@2` that Fastify's `inject()` uses, which needs Node 24.9+. Pinned
+`.nvmrc` to 24 (current LTS), set `engines` to `>=24.9`, and corrected the README and manual-test
+setup.
+
+**Validation:** on Node 24.22: 80 API + 12 shared tests pass, typecheck clean, `next build` succeeds
+(all checkout routes server-rendered on demand). On Node 22.23: route tests fail as described.

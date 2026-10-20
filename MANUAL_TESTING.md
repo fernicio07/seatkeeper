@@ -8,6 +8,7 @@ between tests** unless a test says otherwise.
 ## 0. Setup
 
 ```bash
+nvm use            # Node 24 from .nvmrc (Node 22 fails the route tests)
 npm install
 npm run dev        # API → http://localhost:4000 · web → http://localhost:3000
 ```

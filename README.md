@@ -24,9 +24,12 @@ scripts/          demo-api.sh: curl walkthrough of every scenario
 
 ## Quick start
 
-Requires Node 22+ (developed on Node 26).
+Requires **Node 24.9+**. `.nvmrc` pins the current LTS (24): run `nvm use` first. Verified on
+24.22 and 26. Node 22 is **not** supported: Jest needs Node's native `require(esm)` to load an
+ESM-only dependency of Fastify's test helper.
 
 ```bash
+nvm use                  # reads .nvmrc → Node 24
 npm install
 npm run dev              # API on http://localhost:4000, web on http://localhost:3000
 npm test                 # 80 API + 12 shared tests
