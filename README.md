@@ -29,13 +29,16 @@ Requires Node 22+ (developed on Node 26).
 ```bash
 npm install
 npm run dev              # API on http://localhost:4000, web on http://localhost:3000
-npm test                 # 77 API + 12 shared tests
+npm test                 # 80 API + 12 shared tests
 npm run coverage         # per-file coverage
 npm run typecheck
 ./scripts/demo-api.sh    # every scenario over HTTP, with the API running
 ```
 
 ## Try it in the browser
+
+**Full step-by-step script, with expected results and brief → test coverage: [MANUAL_TESTING.md](MANUAL_TESTING.md).**
+The short version:
 
 Open http://localhost:3000 and press **Start checkout**. Dev-only levers drive the scenarios:
 
@@ -52,9 +55,10 @@ Completing a purchase really sells the seat. Use **Reset demo** on the landing p
    starting countdown in raw HTML. The badge under the button reads "Server-rendered · hydrating…"
    in that HTML and "Interactive · hydrated Nms after navigation" in the browser. With JS
    disabled, the screen still renders (frozen countdown, inert buttons).
-2. **Cross-surface resume.** Click **📱 Continue on your phone**. `/mobile/checkout/<id>` opens in
-   a phone frame, resumes the same session from the server, and shows the same countdown (both are
-   anchored to the API clock).
+2. **Cross-surface resume, both directions.** Click **📱 Continue on your phone**:
+   `/mobile/checkout/<id>` opens in a phone frame, resumes the same session from the server, and shows
+   the same countdown (both anchored to the API clock). From mobile, **💻 Continue on desktop** goes
+   back the other way (the brief's "discover on mobile, complete on desktop").
 3. **Price change.** With a checkout open, bump the price, then return to the tab (or press
    Continue to payment). The pay button is replaced by a banner: ~~$185.00~~ → **$210.00**. Nothing
    proceeds until **Continue at $210.00**.
@@ -70,6 +74,32 @@ Completing a purchase really sells the seat. Use **Reset demo** on the landing p
    - **The race:** press **⚡ Race both surfaces** (dev-only toolbar). Both requests land in the same
      window: web shows "Order confirmed", mobile shows **"Already purchased… You were charged once."**
      Same order id. This is the second line of defense, idempotent replay.
+
+## The brief's questions, answered
+
+- **What state lives on the backend, and what can safely live on the client?** The backend owns
+  everything that decides money or inventory: status, prices, expiry, hold, version, idempotency key,
+  order id. The client holds the session id, a disposable copy of the last server response, and one
+  piece of real client state: `acceptedPrice` (what the fan agreed to on *this* surface). Losing
+  client state is always safe; the worst case is being asked to confirm a price again.
+- **How do web and mobile know whether a session is still valid?** They ask. Every resume (server
+  render, tab refocus, countdown hitting zero, any action) goes through `GET /checkout/:id`, where the
+  server lazily re-evaluates expiry, price and hold and persists the result. The countdown is
+  advisory; the server decides.
+- **What should the fan see if the price changed while they were away?** A banner that *replaces* the
+  pay button (old price struck through, new price, difference) and a CTA carrying the new amount. Both
+  `pay` and `complete` send the accepted price, and the server rejects a mismatch, so a silent change
+  is impossible even if the UI is wrong.
+- **How do you prevent duplicate orders when two devices resume the same session?** Re-validation on
+  focus makes the second device converge to the completed order. If both press at once, version
+  compare-and-set allows one order, the per-session idempotency key allows one charge, and the loser
+  gets a 200 replay with the same order id.
+- **How would you instrument this to know whether continuity improves conversion?** `checkout_started`
+  records the origin surface, and `surface_resumed` records each real open (focus refreshes excluded).
+  `GET /dev/analytics` groups events by session and compares **conversion for sessions that continued
+  on another surface vs. sessions that stayed on one**, alongside banner acknowledgment rate, expiries,
+  failures and replays (`analytics/funnel.ts`). In production: the same events into a warehouse,
+  joined to orders, with an experiment flag on the handoff entry points.
 
 ## Session state model
 
@@ -213,12 +243,12 @@ Every response, success or error, carries the current `session` and `serverTime`
 409 `VERSION_CONFLICT` / `PRICE_MISMATCH` / `INVALID_TRANSITION` / `SEAT_UNAVAILABLE` ·
 410 `SESSION_EXPIRED` · 422 `IDEMPOTENCY_KEY_MISMATCH` · 503 `BUSY` · 400 invalid body.
 Dev-only (not registered in production): `/dev/listings/:id/price`, `/dev/clock/advance`,
-`/dev/payments/next-outcome`, `/dev/holds/:holdId/revoke`, `/dev/reset`.
+`/dev/payments/next-outcome`, `/dev/holds/:holdId/revoke`, `/dev/reset`, `/dev/analytics` (funnel).
 
 **Side effects** (freeze / confirm / release / analytics) run only after a committed write and are
 best-effort: a failure is logged, never turned into a 500 for an operation that succeeded.
 
-**Analytics:** server: `checkout_started`, `status_*`, `price_changed`, `surface_resumed`,
+**Analytics:** server: `checkout_started` (with origin surface), `status_*`, `price_changed`, `surface_resumed`,
 `checkout_replayed`. Client: `price_banner_shown` (once per distinct change, safe under Strict Mode),
 `price_banner_acknowledged`.
 
@@ -251,6 +281,10 @@ best-effort: a failure is logged, never turned into a 500 for an operation that 
 - **Possession of the session id is enough to act on it**, and the client-sent `idempotencyKey`
   mostly guards against a client mixing up sessions (the server charges with its own copy).
 - **`orderId` is the charge id.** Real systems separate orders from payments.
+- **Holds aren't capped at event start.** The brief mentions fans returning "minutes before the event
+  starts"; a 5-minute hold could outlive sales close. `expiresAt = min(now + TTL, salesCutoff)` would fix it.
+- **Mobile recovery states reuse the web components** inside a phone layout. A native app would use
+  platform patterns (bottom sheet, "Back to event" into the app's event screen).
 - **Countdown error** ≈ time from API response to hydration (errs generous). The server is the
   authority.
 

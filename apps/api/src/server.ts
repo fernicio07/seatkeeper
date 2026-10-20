@@ -16,17 +16,18 @@ const DEV = process.env.NODE_ENV !== 'production';
 const clock = new OffsetClock();
 const inventory = new StubInventoryService(clock);
 const payments = new StubPaymentGateway();
+const analytics = new InMemoryAnalyticsSink(true);
 
 const app = buildApp(
   {
     store: new InMemorySessionStore(),
     inventory,
     payments,
-    analytics: new InMemoryAnalyticsSink(true),
+    analytics,
     clock,
     ttlMs: TTL_MS,
   },
-  { dev: DEV ? { inventory, payments, clock } : undefined, logger: true },
+  { dev: DEV ? { inventory, payments, clock, analytics } : undefined, logger: true },
 );
 
 app.listen({ port: PORT, host: '127.0.0.1' }).catch((err) => {

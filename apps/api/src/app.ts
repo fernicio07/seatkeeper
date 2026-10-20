@@ -7,7 +7,8 @@ import {
   type ResumeReason,
   type Surface,
 } from './domain/checkout-service';
-import type { StubInventoryService, StubPaymentGateway, OffsetClock, StubClock } from './services/stubs';
+import type { StubInventoryService, StubPaymentGateway, OffsetClock, StubClock, InMemoryAnalyticsSink } from './services/stubs';
+import { summarizeFunnel } from './analytics/funnel';
 
 // HTTP is a thin adapter: validate input, call the service, map the result.
 // No business rules live in this file.
@@ -57,6 +58,7 @@ export interface DevControls {
   inventory: StubInventoryService;
   payments: StubPaymentGateway;
   clock: OffsetClock | StubClock;
+  analytics: InMemoryAnalyticsSink;
 }
 
 export function buildApp(deps: CheckoutDeps, opts: { dev?: DevControls; logger?: boolean } = {}) {
@@ -64,16 +66,17 @@ export function buildApp(deps: CheckoutDeps, opts: { dev?: DevControls; logger?:
   const checkout = new CheckoutService(deps);
   const now = () => deps.clock.now();
 
-  app.post<{ Body: { listingId: string } }>('/checkout', {
+  app.post<{ Body: { listingId: string; surface?: Surface } }>('/checkout', {
     schema: {
       body: {
         type: 'object',
         required: ['listingId'],
         additionalProperties: false,
-        properties: { listingId: { type: 'string', minLength: 1 } },
+        properties: { listingId: { type: 'string', minLength: 1 }, surface: { enum: ['web', 'mobile'] } },
       },
     },
-    handler: async (req, reply) => send(reply, await checkout.create(req.body.listingId), now(), 201),
+    handler: async (req, reply) =>
+      send(reply, await checkout.create(req.body.listingId, req.body.surface ?? 'web'), now(), 201),
   });
 
   // Resume. Safe to call from any surface, any number of times: it only
@@ -222,6 +225,12 @@ function registerDevRoutes(app: FastifyInstance, dev: DevControls) {
       return { revoked: req.params.holdId };
     },
   });
+
+  // The instrumentation, made visible: raw events + the conversion funnel.
+  app.get('/dev/analytics', async () => ({
+    funnel: summarizeFunnel(dev.analytics.events),
+    recentEvents: dev.analytics.events.slice(-30).reverse(),
+  }));
 
   // Seats back on sale at seed prices — so the demo can be run repeatedly.
   app.post('/dev/reset', async () => {

@@ -46,7 +46,7 @@ const MAX_APPLY_ATTEMPTS = 2;
 export class CheckoutService {
   constructor(private deps: CheckoutDeps) {}
 
-  async create(listingId: string): Promise<ServiceResult> {
+  async create(listingId: string, surface: Surface = 'web'): Promise<ServiceResult> {
     const { store, inventory, clock, analytics, ttlMs } = this.deps;
     const listing = await inventory.getListing(listingId);
     if (!listing) return { ok: false, error: 'LISTING_NOT_FOUND' };
@@ -68,7 +68,9 @@ export class CheckoutService {
       idempotencyKey: `idem_${randomUUID()}`,
       orderId: null,
     });
-    analytics.track({ name: 'checkout_started', sessionId: session.id, at: now });
+    // The origin surface is what lets us tell "continued on another device"
+    // apart from "stayed put" when measuring conversion (see analytics/funnel.ts).
+    analytics.track({ name: 'checkout_started', sessionId: session.id, at: now, props: { surface } });
     return { ok: true, session, listing };
   }
 

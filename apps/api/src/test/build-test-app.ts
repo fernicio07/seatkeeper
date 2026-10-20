@@ -18,7 +18,7 @@ export function buildTestApp(opts: { payments?: PaymentGateway } = {}) {
   const analytics = new InMemoryAnalyticsSink();
   const app = buildApp(
     { store: new InMemorySessionStore(), inventory, payments: opts.payments ?? payments, analytics, clock, ttlMs: TTL_MS },
-    { dev: { inventory, payments, clock } },
+    { dev: { inventory, payments, clock, analytics } },
   );
   return { app, inventory, payments, analytics, clock };
 }

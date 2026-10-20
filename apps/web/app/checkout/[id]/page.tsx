@@ -26,7 +26,7 @@ export default async function CheckoutPage({
         <EventHeader listing={data.listing} />
         {/* Client island: also server-rendered for first paint, then hydrated. */}
         <CheckoutPanel key={data.session.id} initialSession={data.session} initialServerTime={data.serverTime} surface="web" />
-        {!embedded && <HandoffLink sessionId={data.session.id} />}
+        {!embedded && <HandoffLink sessionId={data.session.id} from="web" />}
       </section>
     </main>
   );

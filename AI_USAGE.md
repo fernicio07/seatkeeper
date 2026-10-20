@@ -295,3 +295,29 @@ this summary table and an `engines` field (Node 22+).
 
 **Validation:** all 89 tests pass and typecheck is clean; every command and UI label in the README
 guide was checked against the running app.
+
+## Brief coverage check + manual test script
+
+**My request:** a step-by-step manual test of every scenario, double-checked against the PDF brief.
+
+**AI read the brief and mapped every requirement.** Gaps found and closed:
+- The brief's first example is **mobile → desktop**; only web → mobile existed. Added
+  "💻 Continue on desktop" on the mobile surface.
+- The instrumentation question ("does continuity improve conversion?") couldn't be answered: nothing
+  recorded where a checkout *started*. `checkout_started` now carries the origin surface;
+  `analytics/funnel.ts` compares cross-surface vs single-surface conversion; `GET /dev/analytics`
+  shows it live.
+- README now answers the brief's five questions directly.
+
+**Flagged for my decision, not built:** capping holds at event start ("minutes before the event
+starts"); platform-specific mobile recovery states. Both are listed as tradeoffs.
+
+**Added by AI:** `MANUAL_TESTING.md`: 18 tests with expected results, plus a brief → test coverage
+table.
+
+**Validation:** 80 API tests (+3: funnel unit tests, origin-surface route test) + 12 shared pass.
+Walked the script in the browser: T1/T3/T4 (both handoff directions, analytics origin + resumes,
+funnel classified as cross-surface), T8 (drop copy, pay blocked), T11 (abandoned hold frees the seat
+with no reload of that session), T12 race variant (bounce message), T14 (decline copy, seat
+released). The remaining tests were browser-verified earlier, after the latest change to their code
+paths.

@@ -15,7 +15,7 @@ const SURFACE_PATHS = { web: '/checkout', mobile: '/mobile/checkout' } as const;
 export async function startCheckout(formData: FormData) {
   const listingId = String(formData.get('listingId') ?? '');
   const surface = formData.get('surface') === 'mobile' ? 'mobile' : 'web';
-  const { session, error } = await createCheckout(listingId);
+  const { session, error } = await createCheckout(listingId, surface);
   // Someone else holds or bought the seat: back to the listing, which
   // server-renders current availability and says why.
   if (error === 'SEAT_UNAVAILABLE') redirect('/?unavailable=1');

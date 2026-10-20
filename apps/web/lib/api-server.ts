@@ -19,11 +19,11 @@ export async function fetchCheckout(id: string, surface: Surface): Promise<Check
 }
 
 /** 409 SEAT_UNAVAILABLE is an expected outcome, not an exception. */
-export async function createCheckout(listingId: string): Promise<CheckoutResponse> {
+export async function createCheckout(listingId: string, surface: Surface): Promise<CheckoutResponse> {
   const res = await fetch(`${API_URL}/checkout`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ listingId }),
+    body: JSON.stringify({ listingId, surface }),
     cache: 'no-store',
   });
   if (!res.ok && res.status !== 409) throw new Error(`Create checkout failed: ${res.status}`);

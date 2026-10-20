@@ -19,7 +19,7 @@ export default async function DemoPage({ params }: { params: Promise<{ id: strin
       </section>
       <section>
         <h2>Mobile</h2>
-        <iframe src={`/mobile/checkout/${id}`} title="Mobile surface" className="frame-mobile" />
+        <iframe src={`/mobile/checkout/${id}?embed=1`} title="Mobile surface" className="frame-mobile" />
       </section>
     </main>
     </>

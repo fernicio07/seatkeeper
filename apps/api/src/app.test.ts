@@ -358,3 +358,17 @@ describe('FAILED is terminal and never replayed (decision: drop FAILED replays)'
     expect(t.payments.chargeCount).toBe(1);
   });
 });
+
+describe('instrumentation for conversion', () => {
+  it('checkout_started records the origin surface; /dev/analytics splits cross- vs single-surface', async () => {
+    const t = buildTestApp();
+    const created = (await t.app.inject({ method: 'POST', url: '/checkout', payload: { listingId: 'lst_heat_1', surface: 'mobile' } })).json().session;
+    expect(t.analytics.events).toContainEqual(
+      expect.objectContaining({ name: 'checkout_started', props: { surface: 'mobile' } }),
+    );
+    await t.app.inject({ method: 'GET', url: `/checkout/${created.id}?surface=web&reason=open` }); // continued on desktop
+
+    const { funnel } = (await t.app.inject({ method: 'GET', url: '/dev/analytics' })).json();
+    expect(funnel).toMatchObject({ sessions: 1, crossSurface: { sessions: 1 }, singleSurface: { sessions: 0 } });
+  });
+});
