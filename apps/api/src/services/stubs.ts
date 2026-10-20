@@ -43,9 +43,9 @@ export class OffsetClock implements Clock {
 
 export const DEMO_LISTINGS: Listing[] = [
   {
-    id: 'lst_knicks_1',
-    eventName: 'Knicks vs. Celtics',
-    venue: 'Madison Square Garden',
+    id: 'lst_heat_1',
+    eventName: 'Miami Heat vs. Boston Celtics',
+    venue: 'Kaseya Center, Miami',
     eventDate: '2026-11-14T00:30:00.000Z',
     section: '112',
     row: 'F',

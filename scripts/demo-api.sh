@@ -14,18 +14,18 @@ show() {
         `status=${s.status} v=${s.version} priceAtStart=${s.priceAtStart} currentPrice=${s.currentPrice}`);
     })'
 }
-new_session() { post /checkout '{"listingId":"lst_knicks_1"}'; }
+new_session() { post /checkout '{"listingId":"lst_heat_1"}'; }
 
 echo "── 1. Price change ────────────────────────────────────────────"
 R=$(new_session); ID=$(echo "$R" | field id); KEY=$(echo "$R" | field idempotencyKey)
 printf '%-28s' "create";                echo "$R" | show
-post /dev/listings/lst_knicks_1/price '{"price":21000}' >/dev/null
+post /dev/listings/lst_heat_1/price '{"price":21000}' >/dev/null
 printf '%-28s' "resume after price bump";  curl -s "$A/checkout/$ID" | show
 printf '%-28s' "stale pay (v1 @ 18500)";   post "/checkout/$ID/pay" '{"expectedVersion":1,"acceptedPrice":18500}' | show
 printf '%-28s' "fresh v, old price";       post "/checkout/$ID/pay" '{"expectedVersion":2,"acceptedPrice":18500}' | show
 printf '%-28s' "acknowledged (v2 @ 21000)"; post "/checkout/$ID/pay" '{"expectedVersion":2,"acceptedPrice":21000}' | show
 printf '%-28s' "complete";                 post "/checkout/$ID/complete" "{\"expectedVersion\":3,\"idempotencyKey\":\"$KEY\"}" | show
-post /dev/listings/lst_knicks_1/price '{"price":18500}' >/dev/null
+post /dev/listings/lst_heat_1/price '{"price":18500}' >/dev/null
 
 echo; echo "── 2. Expiration ──────────────────────────────────────────────"
 ID=$(new_session | field id)

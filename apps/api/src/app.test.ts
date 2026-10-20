@@ -4,7 +4,7 @@ import { buildTestApp } from './test/build-test-app';
 import { TTL_MS } from './test/factories';
 
 async function startCheckout(t: ReturnType<typeof buildTestApp>) {
-  const res = await t.app.inject({ method: 'POST', url: '/checkout', payload: { listingId: 'lst_knicks_1' } });
+  const res = await t.app.inject({ method: 'POST', url: '/checkout', payload: { listingId: 'lst_heat_1' } });
   return res.json().session;
 }
 
@@ -48,7 +48,7 @@ describe('checkout routes', () => {
   it('resume after a price bump returns the new currentPrice and bumps version', async () => {
     const t = buildTestApp();
     const created = await startCheckout(t);
-    t.inventory.setPrice('lst_knicks_1', 21000);
+    t.inventory.setPrice('lst_heat_1', 21000);
 
     const res = await t.app.inject({ method: 'GET', url: `/checkout/${created.id}` });
     expect(res.json().session).toMatchObject({ priceAtStart: 18500, currentPrice: 21000, version: 2 });
@@ -93,7 +93,7 @@ describe('response envelope', () => {
   it('includes the API clock as serverTime (respects the injected clock)', async () => {
     const t = buildTestApp();
     t.clock.advance(1234);
-    const res = await t.app.inject({ method: 'POST', url: '/checkout', payload: { listingId: 'lst_knicks_1' } });
+    const res = await t.app.inject({ method: 'POST', url: '/checkout', payload: { listingId: 'lst_heat_1' } });
     expect(res.json().serverTime).toBe(t.clock.now());
   });
 });

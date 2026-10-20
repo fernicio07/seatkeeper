@@ -6,7 +6,7 @@ export const TTL_MS = 10 * 60 * 1000;
 export function makeSession(overrides: Partial<CheckoutSession> = {}): CheckoutSession {
   return {
     id: 'cs_test',
-    listingId: 'lst_knicks_1',
+    listingId: 'lst_heat_1',
     priceAtStart: 18500,
     currentPrice: 18500,
     status: 'ACTIVE',

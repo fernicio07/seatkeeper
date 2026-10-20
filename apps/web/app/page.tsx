@@ -4,7 +4,7 @@ import { fetchListing } from '@/lib/api-server';
 import { formatMoney } from '@/lib/format';
 import { startCheckout } from './actions';
 
-const DEMO_LISTING = 'lst_knicks_1';
+const DEMO_LISTING = 'lst_heat_1';
 
 export default async function Home() {
   const listing = await fetchListing(DEMO_LISTING);
