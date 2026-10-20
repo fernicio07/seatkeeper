@@ -83,3 +83,25 @@ browser clock) → at zero it re-fetched and rendered EXPIRED.
 
 **Known gap (deliberate):** a changed price currently just renders the new `currentPrice`. The
 blocking price banner is step 5, which I'm designing.
+
+## Step 4 — Simulated mobile resume
+
+**Scaffolded by AI (reviewed by me):** `HandoffLink` (plain `<a>` carrying only the id),
+`/m/checkout/[id]` phone-frame route, `/demo/[id]` side-by-side iframes, re-validate on
+`visibilitychange`/`focus` in `CheckoutPanel`. Demo listing switched to a Miami Heat game at my request.
+
+**Design boundary:** the re-fetch *trigger* is plumbing (it only calls GET). How a changed session
+is *presented* (price banner, expiry recovery) is step 5, which I'm designing.
+
+**Found while validating (fixed):**
+- The browser pane fires focus/visibility events into every frame, so my first cross-surface test
+  couldn't attribute updates to the trigger. Measured instead: 0 requests while idle (no loop),
+  exactly 1 per focus event.
+- A real tab switch fires both `visibilitychange` and `focus` → duplicate GETs. Added an in-flight
+  guard; verified focus+visibility together = 1 request.
+- Mobile iframe at 440px tripped the page's own ≤480px breakpoint and lost its bezel; made the
+  iframe itself the phone frame.
+
+**Validation:** typecheck clean, 16 API tests pass. In the browser: web page → side-by-side demo;
+both surfaces SSR the same session with matching API-anchored countdowns; paying on mobile and
+completing out-of-band via curl were both reflected on web after re-validation.

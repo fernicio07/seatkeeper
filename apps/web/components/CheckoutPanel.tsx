@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CheckoutResponse, CheckoutSession } from '@seatkeeper/shared';
 import { checkoutApi } from '@/lib/api-client';
 import { formatMoney } from '@/lib/format';
@@ -10,6 +10,7 @@ import { useHydrated } from './useHydrated';
 interface Props {
   initialSession: CheckoutSession;
   initialServerTime: number;
+  surface: 'web' | 'mobile';
 }
 
 /**
@@ -17,7 +18,7 @@ interface Props {
  * then hydrated. It holds a *copy* of server state and only ever replaces it
  * wholesale with what the API returns — it never computes status or price itself.
  */
-export function CheckoutPanel({ initialSession, initialServerTime }: Props) {
+export function CheckoutPanel({ initialSession, initialServerTime, surface }: Props) {
   const [session, setSession] = useState(initialSession);
   const [serverTime, setServerTime] = useState(initialServerTime);
   const [error, setError] = useState<string | null>(null);
@@ -42,14 +43,42 @@ export function CheckoutPanel({ initialSession, initialServerTime }: Props) {
   };
 
   // Countdown hit zero locally → ask the server. It decides, not us.
-  const refresh = useCallback(() => checkoutApi.get(session.id).then(apply), [session.id, apply]);
+  // Concurrent triggers share one in-flight request: returning to a tab fires
+  // both `visibilitychange` and `focus`, which would otherwise double-fetch.
+  const inFlight = useRef<Promise<void> | null>(null);
+  const refresh = useCallback(() => {
+    inFlight.current ??= checkoutApi
+      .get(session.id)
+      .then(apply)
+      .catch(() => setError('NETWORK_ERROR'))
+      .finally(() => {
+        inFlight.current = null;
+      });
+    return inFlight.current;
+  }, [session.id, apply]);
+
+  // Re-validate whenever this surface becomes active again. While it was in
+  // the background the other surface may have paid, completed, or the price
+  // may have moved — its local copy can't be trusted. (Presentation of what
+  // changed is step 5.)
+  useEffect(() => {
+    const onActive = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    window.addEventListener('focus', onActive);
+    document.addEventListener('visibilitychange', onActive);
+    return () => {
+      window.removeEventListener('focus', onActive);
+      document.removeEventListener('visibilitychange', onActive);
+    };
+  }, [refresh]);
 
   // Buttons are inert until React has attached handlers. Rendering them
   // disabled (rather than clickable-but-dead) is honest about that.
   const interactive = hydrated !== null && !busy;
 
   return (
-    <div className="panel">
+    <div className="panel" data-surface={surface}>
       {/* TODO(step 5): price-change banner + expiry recovery UX (owned by me). */}
       <p className="price">{formatMoney(session.currentPrice)}</p>
 
