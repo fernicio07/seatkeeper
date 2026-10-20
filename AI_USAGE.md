@@ -140,3 +140,14 @@ fresh-mobile, purity) all pass; API suite still green; typecheck clean. In the b
 pay at $210 accepted by server; (2) same PENDING session opened on mobile → banner, no Place order,
 no countdown → accept → Place order $210; (3) expired session on mobile → restart → new session id,
 stayed on `/m/`, fresh $210 hold, no banner.
+
+## Cleanup after milestone
+
+- **My call:** renamed the mobile route `/m/checkout/[id]` → `/mobile/checkout/[id]` for clarity.
+  Earlier log entries mention `/m/` because that was the route at the time.
+- **My refactor:** removed the `useEffect` from `useAcceptedPrice`. `key={session.id}` already
+  remounts the panel for a new session, so the sync effect only added an extra render and a
+  footgun (a caller passing `currentPrice` would silently auto-accept every change).
+- **Validation:** typecheck clean, all tests pass; `/mobile/checkout/<id>` → 200 and old `/m/` → 404;
+  handoff link and demo iframe point at `/mobile`; restart from an expired mobile session landed on
+  `/mobile/checkout/<new id>`.

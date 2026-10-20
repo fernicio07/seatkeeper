@@ -5,7 +5,7 @@ import { createCheckout } from '@/lib/api-server';
 
 // Fixed map, not a path taken from the form: a client-supplied redirect
 // target would be an open redirect.
-const SURFACE_PATHS = { web: '/checkout', mobile: '/m/checkout' } as const;
+const SURFACE_PATHS = { web: '/checkout', mobile: '/mobile/checkout' } as const;
 
 // A Server Action: the <form> posts here even before (or without) client JS.
 // The session is created server-side and the browser only ever learns its id.

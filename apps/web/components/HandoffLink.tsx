@@ -4,7 +4,7 @@
 export function HandoffLink({ sessionId }: { sessionId: string }) {
   return (
     <div className="handoff">
-      <a className="secondary" href={`/m/checkout/${sessionId}`} target="_blank" rel="noopener">
+      <a className="secondary" href={`/mobile/checkout/${sessionId}`} target="_blank" rel="noopener">
         📱 Continue on your phone
       </a>
       <a className="text-link" href={`/demo/${sessionId}`}>Side-by-side demo</a>

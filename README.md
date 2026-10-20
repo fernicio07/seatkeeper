@@ -75,10 +75,10 @@ screen still renders correctly (frozen countdown, inert buttons).
 
 ## Cross-surface resume (web → mobile)
 
-- **The deep link carries only the session id** (`/m/checkout/<id>`), never price, version, or
+- **The deep link carries only the session id** (`/mobile/checkout/<id>`), never price, version, or
   status. A link is a frozen snapshot that may be opened hours later; carrying only the id forces
   the opening surface to resume through `GET /checkout/:id`, where the server re-validates.
-- **`/m/checkout/[id]`**: the simulated mobile surface. Same SSR resume, its own client state,
+- **`/mobile/checkout/[id]`**: the simulated mobile surface. Same SSR resume, its own client state,
   phone-frame layout (full-screen on real phone widths).
 - **`/demo/[id]`**: web and mobile side by side as two iframes: separate documents and React roots
   that share nothing but the id. An honest two-device simulation, used for the duplicate-completion
