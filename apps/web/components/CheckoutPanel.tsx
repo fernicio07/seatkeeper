@@ -32,8 +32,11 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
   const [busy, setBusy] = useState(false);
   // Local countdown reached zero; the server hasn't confirmed yet.
   const [confirming, setConfirming] = useState(false);
+  // This surface's own complete call came back as an idempotent replay:
+  // the order was already placed (by the other surface).
+  const [alreadyPurchased, setAlreadyPurchased] = useState(false);
   const hydrated = useHydrated();
-  const { acceptedPrice, acknowledge } = useAcceptedPrice(session.id, session.priceAtStart);
+  const { acceptedPrice, acknowledge } = useAcceptedPrice(session.priceAtStart);
   const view = deriveCheckoutView(session, acceptedPrice);
 
   const apply = useCallback((res: CheckoutResponse) => {
@@ -46,7 +49,9 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
   const run = async (op: () => Promise<CheckoutResponse>) => {
     setBusy(true);
     try {
-      apply(await op());
+      const res = await op();
+      apply(res);
+      return res;
     } catch {
       setError('NETWORK_ERROR');
     } finally {
@@ -147,8 +152,11 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
                 checkoutApi.complete(session.id, {
                   expectedVersion: session.version,
                   idempotencyKey: session.idempotencyKey,
+                  acceptedPrice,
                 }),
-              )
+              ).then((res) => {
+                if (res?.replayed && res.session?.status === 'COMPLETED') setAlreadyPurchased(true);
+              })
             }
           >
             Place order · {formatMoney(session.currentPrice)}
@@ -156,7 +164,14 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
         </>
       )}
 
-      {view.kind === 'COMPLETED' && <p className="notice success">You&apos;re going! Order confirmed.</p>}
+      {view.kind === 'COMPLETED' && (
+        <div className="notice success">
+          <h3>{alreadyPurchased ? 'Already purchased' : "You're going! Order confirmed."}</h3>
+          {alreadyPurchased && <p>This order was already placed from another device. You were charged once.</p>}
+          {/* Same id on every surface: the visible proof there is exactly one order. */}
+          <p className="order-id">Order {session.orderId ?? '—'}</p>
+        </div>
+      )}
 
       {view.kind === 'EXPIRED' && (
         <RestartCheckout

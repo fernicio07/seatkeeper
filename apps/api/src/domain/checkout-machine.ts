@@ -122,12 +122,25 @@ export function transition(session: CheckoutSession, event: CheckoutEvent): Tran
       };
     }
 
-    const nextStatus = event.chargeOutcome === 'succeeded' ? 'COMPLETED' : 'FAILED';
+    // COMPLETE price guard (placed after replay check)
+    if (event.acceptedPrice !== session.currentPrice) {
+      return {
+        ok: false,
+        error: 'PRICE_MISMATCH',
+        session: { ...session },
+      };
+    }
+
+    const isSuccess = event.chargeOutcome === 'succeeded';
+    const nextStatus = isSuccess ? 'COMPLETED' : 'FAILED';
+    const orderId = isSuccess ? event.chargeId : null;
+
     return {
       ok: true,
       session: {
         ...session,
         status: nextStatus,
+        orderId,
       },
     };
   }

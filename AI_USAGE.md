@@ -151,3 +151,25 @@ stayed on `/m/`, fresh $210 hold, no banner.
 - **Validation:** typecheck clean, all tests pass; `/mobile/checkout/<id>` → 200 and old `/m/` → 404;
   handoff link and demo iframe point at `/mobile`; restart from an expired mobile session landed on
   `/mobile/checkout/<new id>`.
+
+## Step 7: Duplicate completion (idempotency + version)
+
+**Decided by me:** rely on gateway idempotency rather than a claim-before-charge `PROCESSING`
+state (avoids crash-recovery complexity); `acceptedPrice` guard on COMPLETE placed *after* the
+replay check (a replay changes nothing and charges nothing, so COMPLETED is the truth); add
+`orderId` so "one order" is visible in the UI, not only in tests.
+
+**Written by me:** `transition()` changes: COMPLETE price guard and `orderId` from `chargeId`
+(null on decline, unchanged on replay). Removed the unused `sessionId` param from `useAcceptedPrice`.
+
+**Scaffolded by AI (reviewed by me):** contract additions (`orderId`, COMPLETE `acceptedPrice` +
+`chargeId`, `replayed`); service re-runs the machine on CAS loss (turns the loser into a replay
+without re-charging); `replayed` flag in responses; complete schema; "Already purchased" + order
+number UI; `BarrierGateway` (forces worst-case interleaving) and `NaiveGateway` (shows layering)
+race tests; specs for my machine changes written red-first; demo script fires parallel completes.
+
+**Validation:** specs were red before my change (4 failing, each needing my code; the concurrent
+test failed only at the `orderId` assertion), and green after: 42 API + 12 shared tests pass,
+typecheck clean. `scripts/demo-api.sh`: parallel completes → both 200, same order id, one
+`[replayed]`. Browser side-by-side: both "Place order" buttons clicked in the same tick → web
+"Order confirmed", mobile "Already purchased… charged once", identical order id.

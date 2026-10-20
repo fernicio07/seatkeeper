@@ -16,6 +16,6 @@ export const checkoutApi = {
   get: (id: string) => call(`/checkout/${id}`),
   pay: (id: string, body: { expectedVersion: number; acceptedPrice: number }) =>
     call(`/checkout/${id}/pay`, body),
-  complete: (id: string, body: { expectedVersion: number; idempotencyKey: string }) =>
+  complete: (id: string, body: { expectedVersion: number; idempotencyKey: string; acceptedPrice: number }) =>
     call(`/checkout/${id}/complete`, body),
 };

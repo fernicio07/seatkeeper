@@ -2,8 +2,7 @@
 
 import { useState } from 'react';
 
-export function useAcceptedPrice(sessionId: string, initialPrice: number) {
-  // Initialize to priceAtStart (via initialPrice) on component mount
+export function useAcceptedPrice(initialPrice: number) {
   const [acceptedPrice, setAcceptedPrice] = useState<number>(initialPrice);
 
   const acknowledge = (price: number) => {

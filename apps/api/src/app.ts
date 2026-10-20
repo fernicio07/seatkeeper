@@ -23,7 +23,12 @@ const HTTP_STATUS: Record<ServiceErrorCode, number> = {
 // countdown against the authority instead of their own possibly-wrong clock.
 function send(reply: FastifyReply, result: ServiceResult, serverTime: number, okStatus = 200) {
   if (result.ok) {
-    return reply.code(okStatus).send({ session: result.session, listing: result.listing, serverTime });
+    return reply.code(okStatus).send({
+      session: result.session,
+      listing: result.listing,
+      serverTime,
+      ...(result.replayed ? { replayed: true } : {}),
+    });
   }
   return reply.code(HTTP_STATUS[result.error]).send({
     error: result.error,
@@ -88,18 +93,22 @@ export function buildApp(deps: CheckoutDeps, opts: { dev?: DevControls; logger?:
     },
   );
 
-  app.post<{ Params: { id: string }; Body: { expectedVersion: number; idempotencyKey: string } }>(
+  app.post<{
+    Params: { id: string };
+    Body: { expectedVersion: number; idempotencyKey: string; acceptedPrice: number };
+  }>(
     '/checkout/:id/complete',
     {
       schema: {
         params: idParams,
         body: {
           type: 'object',
-          required: ['expectedVersion', 'idempotencyKey'],
+          required: ['expectedVersion', 'idempotencyKey', 'acceptedPrice'],
           additionalProperties: false,
           properties: {
             expectedVersion: { type: 'integer', minimum: 1 },
             idempotencyKey: { type: 'string', minLength: 1 },
+            acceptedPrice: { type: 'integer', minimum: 0 },
           },
         },
       },

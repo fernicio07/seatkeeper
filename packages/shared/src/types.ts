@@ -20,6 +20,7 @@ export interface CheckoutSession {
   inventoryHoldId: string;
   version: number; // bumped by the store on every successful write
   idempotencyKey: string; // one per session → at most one charge/order
+  orderId: string | null; // set once, on COMPLETED; both surfaces show the same one
 }
 
 export interface Listing {
@@ -41,9 +42,11 @@ export type CheckoutEvent =
       type: 'COMPLETE';
       expectedVersion: number;
       idempotencyKey: string;
+      acceptedPrice: number; // the price this surface agreed to (server-side lock)
       // transition() is pure, so the gateway result is passed in as data
       // by the route handler after it calls PaymentGateway.charge().
       chargeOutcome: 'succeeded' | 'declined';
+      chargeId: string; // source for orderId
     };
 
 // Facts about the outside world that evaluate() reconciles the session against.
@@ -75,4 +78,5 @@ export interface CheckoutResponse {
   listing: Listing | null;
   serverTime: number; // API clock at response time (the clock that decides expiry)
   error?: string;
+  replayed?: boolean; // true when the request was an idempotent replay (changed nothing)
 }

@@ -26,10 +26,12 @@ export interface CheckoutDeps {
 export type ServiceErrorCode = TransitionErrorCode | 'NOT_FOUND' | 'LISTING_NOT_FOUND';
 
 export type ServiceResult =
-  | { ok: true; session: CheckoutSession; listing: Listing }
+  | { ok: true; session: CheckoutSession; listing: Listing; replayed?: boolean }
   | { ok: false; error: ServiceErrorCode; session?: CheckoutSession; listing?: Listing };
 
 const MAX_REFRESH_ATTEMPTS = 3;
+// apply(): first attempt + one re-run against fresh state after losing a CAS race.
+const MAX_APPLY_ATTEMPTS = 2;
 
 export class CheckoutService {
   constructor(private deps: CheckoutDeps) {}
@@ -50,6 +52,7 @@ export class CheckoutService {
       inventoryHoldId: await inventory.hold(listingId),
       version: 1,
       idempotencyKey: `idem_${randomUUID()}`,
+      orderId: null,
     });
     analytics.track({ name: 'checkout_started', sessionId: session.id, at: now });
     return { ok: true, session, listing };
@@ -91,24 +94,40 @@ export class CheckoutService {
     return this.apply(id, { type: 'PAY', ...input });
   }
 
-  async complete(id: string, input: { expectedVersion: number; idempotencyKey: string }) {
+  async complete(
+    id: string,
+    input: { expectedVersion: number; idempotencyKey: string; acceptedPrice: number },
+  ) {
     const loaded = await this.load(id);
     if (!loaded.ok) return loaded;
     const { session, listing } = loaded;
 
     // Dry run BEFORE charging: transition() is pure, so we can ask "would a
     // successful charge be a legal transition?" without side effects. This
-    // stops us charging a card for a session that's ACTIVE, expired, stale, or
-    // already completed (replay — returned as-is, no second charge).
-    const dryRun = transition(session, { type: 'COMPLETE', ...input, chargeOutcome: 'succeeded' });
+    // stops us charging a card for a session that's ACTIVE, expired, stale,
+    // at a price this surface didn't accept, or already completed (replay —
+    // returned as-is, no second charge).
+    const dryRun = transition(session, {
+      type: 'COMPLETE',
+      ...input,
+      chargeOutcome: 'succeeded',
+      chargeId: 'dry-run',
+    });
     if (!dryRun.ok) return { ok: false as const, error: dryRun.error, session: dryRun.session, listing };
-    if (sameState(session, dryRun.session)) return { ok: true as const, session, listing };
+    if (sameState(session, dryRun.session)) return { ok: true as const, session, listing, replayed: true };
 
+    // Two concurrent completes can BOTH get past the dry run and reach this
+    // line. Version CAS (in apply) guarantees one order; the per-session
+    // idempotencyKey is what guarantees one charge. Different layers, different failures.
     const charge = await this.deps.payments.charge({
       amount: session.currentPrice,
       idempotencyKey: session.idempotencyKey,
     });
-    return this.apply(id, { type: 'COMPLETE', ...input, chargeOutcome: charge.status }, loaded);
+    return this.apply(
+      id,
+      { type: 'COMPLETE', ...input, chargeOutcome: charge.status, chargeId: charge.chargeId },
+      loaded,
+    );
   }
 
   /** Run a fan intent through the machine and persist it with CAS. */
@@ -117,24 +136,38 @@ export class CheckoutService {
     event: CheckoutEvent,
     preloaded?: Extract<ServiceResult, { ok: true }>,
   ): Promise<ServiceResult> {
-    const loaded = preloaded ?? (await this.load(id));
-    if (!loaded.ok) return loaded;
-    const { session, listing } = loaded;
+    let loaded: ServiceResult = preloaded ?? (await this.load(id));
 
-    const result = transition(session, event);
-    if (!result.ok) return { ok: false, error: result.error, session: result.session, listing };
-    if (sameState(session, result.session)) return { ok: true, session, listing }; // idempotent replay
+    for (let attempt = 0; attempt < MAX_APPLY_ATTEMPTS; attempt++) {
+      if (!loaded.ok) return loaded;
+      const { session, listing } = loaded;
 
-    const saved = await this.deps.store.compareAndSet(id, session.version, result.session);
-    if (!saved) {
-      // Someone else wrote between our load and our CAS (e.g. the other
-      // surface). Return the fresh state so the client can re-render.
-      // Step 7 turns the COMPLETE case of this into a graceful replay.
-      const fresh = await this.load(id);
-      return { ok: false, error: 'VERSION_CONFLICT', session: fresh.session, listing };
+      const result = transition(session, event);
+      if (!result.ok) return { ok: false, error: result.error, session: result.session, listing };
+      if (sameState(session, result.session)) return { ok: true, session, listing, replayed: true };
+
+      const saved = await this.deps.store.compareAndSet(id, session.version, result.session);
+      if (saved) {
+        await this.afterWrite(session, saved);
+        return { ok: true, session: saved, listing, replayed: false };
+      }
+
+      // Lost the CAS race: another request (e.g. the other surface) wrote
+      // between our load and our write. Don't fail yet — re-run the machine
+      // against the fresh state with the SAME event. For a duplicate COMPLETE
+      // the fresh state is COMPLETED, and the machine's replay-first guard
+      // turns it into a replay. The event carries the original charge result,
+      // so this never charges again. For anything else (e.g. a stale PAY) the
+      // machine's version check returns VERSION_CONFLICT.
+      loaded = await this.load(id);
     }
-    await this.afterWrite(session, saved);
-    return { ok: true, session: saved, listing };
+
+    return {
+      ok: false,
+      error: 'VERSION_CONFLICT',
+      session: loaded.session,
+      listing: loaded.listing,
+    };
   }
 
   /** Side effects keyed off status changes, run only after a write succeeded. */

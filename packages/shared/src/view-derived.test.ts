@@ -13,6 +13,7 @@ function session(overrides: Partial<CheckoutSession> = {}): CheckoutSession {
     inventoryHoldId: 'hold_test',
     version: 1,
     idempotencyKey: 'idem_test',
+    orderId: null,
     ...overrides,
   };
 }

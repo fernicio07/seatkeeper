@@ -48,7 +48,9 @@ describe('review findings: replays arrive with a stale version', () => {
       type: 'COMPLETE',
       expectedVersion: 2,
       idempotencyKey: 'idem_test',
+      acceptedPrice: 18500,
       chargeOutcome: 'succeeded',
+      chargeId: 'ch_test',
     });
     expect(mobile).toEqual({ ok: true, session: completed });
   });
@@ -68,5 +70,46 @@ describe('review findings: error codes must match reality', () => {
     const completed = makeSession({ status: 'COMPLETED' });
     const res = transition(completed, { type: 'PAY', expectedVersion: 1, acceptedPrice: 18500 });
     expect(res).toMatchObject({ ok: false, error: 'INVALID_TRANSITION' });
+  });
+});
+
+// ─── Step 7 specs for YOUR transition() changes (red until implemented) ─────
+describe('step 7: COMPLETE price guard + orderId', () => {
+  const complete = (overrides: Partial<Extract<import('@seatkeeper/shared').CheckoutEvent, { type: 'COMPLETE' }>> = {}) => ({
+    type: 'COMPLETE' as const,
+    expectedVersion: 2,
+    idempotencyKey: 'idem_test',
+    acceptedPrice: 18500,
+    chargeOutcome: 'succeeded' as const,
+    chargeId: 'ch_abc',
+    ...overrides,
+  });
+  const pending = () => makeSession({ status: 'PENDING_PAYMENT', version: 2 });
+
+  it('successful COMPLETE sets a non-null orderId derived from chargeId', () => {
+    const res = transition(pending(), complete());
+    expect(res.ok && res.session.orderId).toBeTruthy();
+  });
+
+  it('orderId is deterministic: same chargeId → same orderId (pure)', () => {
+    const a = transition(pending(), complete());
+    const b = transition(pending(), complete());
+    expect(a.session.orderId).toBe(b.session.orderId);
+  });
+
+  it('declined COMPLETE → FAILED with orderId null (no order exists)', () => {
+    const res = transition(pending(), complete({ chargeOutcome: 'declined' }));
+    expect(res).toMatchObject({ ok: true, session: { status: 'FAILED', orderId: null } });
+  });
+
+  it('COMPLETE with acceptedPrice !== currentPrice → PRICE_MISMATCH', () => {
+    const res = transition(makeSession({ status: 'PENDING_PAYMENT', version: 2, currentPrice: 21000 }), complete());
+    expect(res).toMatchObject({ ok: false, error: 'PRICE_MISMATCH' });
+  });
+
+  it('replay on COMPLETED ignores acceptedPrice and keeps the original orderId', () => {
+    const done = makeSession({ status: 'COMPLETED', version: 3, orderId: 'ord_original' });
+    const res = transition(done, complete({ acceptedPrice: 1, chargeId: 'ch_other' }));
+    expect(res).toEqual({ ok: true, session: done });
   });
 });

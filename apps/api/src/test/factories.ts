@@ -14,6 +14,7 @@ export function makeSession(overrides: Partial<CheckoutSession> = {}): CheckoutS
     inventoryHoldId: 'hold_test',
     version: 1,
     idempotencyKey: 'idem_test',
+    orderId: null,
     ...overrides,
   };
 }

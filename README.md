@@ -121,6 +121,25 @@ agreed to $210 only on the *other* device. (A matching server guard on `complete
 **Expiry:** at local zero the UI shows "Confirming your hold…" and asks the server, which decides.
 Recovery is a Server Action form, so it works before hydration.
 
+## Duplicate completion (two surfaces, one session)
+
+Two surfaces pressing "Place order" at the same time both load PENDING_PAYMENT v2, and both pass
+the pre-charge dry run. Two independent layers then stop two different failures:
+
+| Layer | Stops | How |
+|---|---|---|
+| `version` CAS | a second **order** (state write) | only one `compareAndSet(v2 → v3)` can win |
+| `idempotencyKey` | a second **charge** | one key per session; the gateway returns the first result for a repeated key (Stripe semantics) |
+
+The CAS loser doesn't fail. The service re-loads and re-runs `transition()` with the same event
+(same charge result, so no new charge). The machine's replay-first guard sees COMPLETED with a
+matching key and returns a replay. The losing surface gets **200 `replayed: true`** with the same
+`orderId` and shows "Already purchased". `complete` also carries `acceptedPrice` (checked after
+the replay check), so a stale surface can't complete at a price it never showed.
+
+Tests force the worst case with a `BarrierGateway` that holds each charge until both requests
+arrive. A `NaiveGateway` test (no key dedupe) shows the layering: still one order, but two charges.
+
 ## Session state model
 
 `ACTIVE → PENDING_PAYMENT → COMPLETED`, plus terminal `EXPIRED` and `FAILED`.
@@ -130,7 +149,7 @@ Recovery is a Server Action form, so it works before hydration.
 |---|---|---|---|
 | ACTIVE | PAY | PENDING_PAYMENT | not expired, hold valid, `expectedVersion` matches, `acceptedPrice === currentPrice` |
 | ACTIVE | time | EXPIRED | `now >= expiresAt` (evaluated lazily on every read/write) |
-| PENDING_PAYMENT | COMPLETE (ok) | COMPLETED | `idempotencyKey` matches |
+| PENDING_PAYMENT | COMPLETE (ok) | COMPLETED | `idempotencyKey` matches, `acceptedPrice === currentPrice`; sets `orderId` |
 | PENDING_PAYMENT | COMPLETE (declined) | FAILED | — |
 | PENDING_PAYMENT | PAY | PENDING_PAYMENT | idempotent no-op — only if `acceptedPrice === currentPrice` |
 | COMPLETED | COMPLETE | COMPLETED | idempotent replay (same `idempotencyKey`) |
@@ -162,4 +181,9 @@ additionally deduped by the per-session `idempotencyKey`.
   a reload asks again. Errs toward over-asking; a server-side ack would sync it at the cost of a route.
 - No push: a price change is discovered at the next interaction (refocus, countdown, action), never
   by a silent charge. SSE would surface it live.
+- Double-charge protection relies on the gateway honoring idempotency keys. The alternative, a
+  claim-before-charge `PROCESSING` state, means only one request ever reaches the gateway, but it
+  needs crash recovery (reconcile a stuck claim with the gateway by key). Not worth it at this scope.
+- `orderId` is the charge id. Real systems separate orders from payments (one order can have
+  retries/refunds).
 _(more as steps land)_

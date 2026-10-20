@@ -120,3 +120,4 @@ body {
 .price-change del { color: var(--muted); }
 .price-change .text-link { justify-self: center; margin-top: 8px; }
 .confirming { margin: 0; color: var(--muted); }
+.order-id { margin: 0; font-family: ui-monospace, monospace; font-size: 0.8rem; color: var(--text); }
