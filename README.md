@@ -29,14 +29,23 @@ Requires **Node 24.9+**. `.nvmrc` pins the current LTS (24): run `nvm use` first
 ESM-only dependency of Fastify's test helper.
 
 ```bash
-nvm use                  # reads .nvmrc → Node 24
+nvm use
 npm install
-npm run dev              # API on http://localhost:4000, web on http://localhost:3000
-npm test                 # 80 API + 12 shared tests
-npm run coverage         # per-file coverage
-npm run typecheck
-./scripts/demo-api.sh    # every scenario over HTTP, with the API running
+npm run dev
 ```
+
+`nvm use` reads `.nvmrc` (Node 24). `npm run dev` starts the API on http://localhost:4000 and the web
+app on http://localhost:3000. In a second terminal (run `nvm use` there too):
+
+```bash
+npm test
+npm run coverage
+npm run typecheck
+./scripts/demo-api.sh
+```
+
+That's 80 API + 12 shared tests, per-file coverage, the typecheck, and every scenario over HTTP
+(with the servers running).
 
 ## Try it in the browser
 
@@ -45,10 +54,16 @@ The short version:
 
 Open http://localhost:3000 and press **Start checkout**. Dev-only levers drive the scenarios:
 
+Bump the price, skip 5 minutes, and put the seat back on sale:
+
 ```bash
-curl -s -X POST localhost:4000/dev/listings/lst_heat_1/price -H 'content-type: application/json' -d '{"price":21000}'   # bump price
-curl -s -X POST localhost:4000/dev/clock/advance        -H 'content-type: application/json' -d '{"ms":300000}'     # skip 5 min
-curl -s -X POST localhost:4000/dev/reset                -H 'content-type: application/json' -d '{}'                # seat back on sale
+curl -s -X POST localhost:4000/dev/listings/lst_heat_1/price -H 'content-type: application/json' -d '{"price":21000}'
+```
+```bash
+curl -s -X POST localhost:4000/dev/clock/advance -H 'content-type: application/json' -d '{"ms":300000}'
+```
+```bash
+curl -s -X POST localhost:4000/dev/reset -H 'content-type: application/json' -d '{}'
 ```
 
 Completing a purchase really sells the seat. Use **Reset demo** on the landing page (or

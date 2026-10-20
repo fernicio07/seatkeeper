@@ -334,3 +334,19 @@ setup.
 
 **Validation:** on Node 24.22: 80 API + 12 shared tests pass, typecheck clean, `next build` succeeds
 (all checkout routes server-rendered on demand). On Node 22.23: route tests fail as described.
+
+## Manual test script: explicit commands
+
+**My feedback:** steps like "Bump the price" didn't say a command was needed, which made the
+script hard to follow.
+
+**AI rewrite:** every step is labeled 🖱 Browser or ⌨️ Terminal, every terminal step has the exact
+command inline with its expected output, and each test starts with its own reset. Also fixed:
+- `# comments` inside runnable code blocks (README + script): zsh passes them along as arguments
+  when pasted, so they were removed from every block.
+- T2's `grep` also matched the hydration data Next embeds in the page; tightened to print exactly
+  four lines.
+
+**Validation:** every ⌨️ command run as written against fresh servers. Outputs match the script
+(`{"reset":true}`, price/decline/clock acks, `{"revoked":…}`, the four T2 lines). T17's funnel
+numbers reproduced exactly from a fresh server.
