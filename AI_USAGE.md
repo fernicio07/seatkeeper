@@ -1,0 +1,43 @@
+# AI usage log
+
+Running, honest log of who designed/wrote what, and how AI output was validated.
+Updated at every commit.
+
+## Step 1 — State machine, store, stub interfaces
+
+**Designed by me (decisions made after AI laid out alternatives):**
+- `PRICE_CHANGED` as a derived signal, not a lifecycle status.
+- Price acceptance: `pay` carries `acceptedPrice` (no extra route; `priceAtStart` kept for audit).
+- Optimistic concurrency (version CAS) over locking — no locks held across payment calls;
+  the 409 conflict payload *is* the cross-surface UX.
+- No expiry during PENDING_PAYMENT (hold frozen while money moves).
+- FAILED is terminal; recovery = new session.
+- Duplicate completion returns 200 `replayed: true`, not 409.
+
+**Scaffolded by AI (reviewed by me):**
+- npm workspaces, TS config, Jest/ts-jest setup (TypeScript pinned to 5.9: npm pulled TS 7, which ts-jest 29 cannot run).
+- Shared types, `InMemorySessionStore` (clone-in/clone-out, store-owned version bump),
+  `InventoryService` / `PaymentGateway` / `AnalyticsSink` / `Clock` interfaces + stubs.
+- Store unit tests; state-machine test todos mirroring the transition table.
+- AI review edits to my first-draft types: removed `now` from events (single time source),
+  dropped `EVALUATE_EXPIRY` event in favor of a separate `evaluate()`, string errors →
+  `TransitionErrorCode` union, `compareAndSet` returns the stored session instead of boolean.
+
+**Written by me:** `evaluate()` and `transition()` in `apps/api/src/domain/checkout-machine.ts`.
+- `evaluate()`: lazy expiry; invalid hold (seat sold elsewhere) → EXPIRED; price refreshed only while ACTIVE.
+- `transition()`: replay checks → version check → per-event guards.
+
+**AI review of my first draft found (I fixed all of these):**
+- Compile error: treated `chargeOutcome` as an object.
+- **Guard-ordering bug:** version check ran first, so every legitimate replay (retried PAY,
+  second surface completing) got `VERSION_CONFLICT` — replays carry a stale version by
+  construction. Moved replay checks ahead of the version check.
+- Re-PAY must still verify `acceptedPrice === currentPrice`, or a stale tab could proceed to
+  charge a price it never displayed.
+- PAY on COMPLETED/FAILED returned `SESSION_EXPIRED`; now `INVALID_TRANSITION`.
+- Added a `never` exhaustiveness check on the event union.
+
+**Validation:**
+- AI wrote 4 regression tests encoding the review findings *before* my fix; they failed against
+  the first draft and pass against the revision. 5 store tests pass. `tsc --noEmit` clean.
+- Full transition-table coverage is deferred to step 8 (left as `it.todo`).

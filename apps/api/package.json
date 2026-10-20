@@ -1,0 +1,19 @@
+{
+  "name": "@seatkeeper/api",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "jest",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@seatkeeper/shared": "*"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.6.5",
+    "jest": "^30.5.2",
+    "ts-jest": "^29.4.15",
+    "typescript": "~5.9"
+  }
+}
