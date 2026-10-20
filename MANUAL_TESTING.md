@@ -119,13 +119,18 @@ In scenario 3, both rows show the **same `order=`** and exactly one says `[repla
    ```bash
    curl -s localhost:3000/checkout/$ID | grep -oE 'Miami Heat vs\. Boston Celtics|\$185\.00|Seat held for|Server-rendered · hydrating…' | sort -u
    ```
-4. **🖱** Look at the small badge under the panel.
+4. **🖱** **Reload the page** (⌘R), then look at the small badge under the panel. You need the
+   reload because **Start checkout** reaches this page through a redirect, which is a client-side
+   navigation. The badge then honestly says "Interactive · client-side navigation", since the
+   browser's page-load timer still belongs to the landing page. Only a real page load can report a
+   hydration time.
 5. **🖱** *(Optional)* DevTools → Settings → Disable JavaScript → reload. Re-enable afterwards.
 
 **Expected**
 - [ ] Step 3 prints exactly four lines: `$185.00`, `Miami Heat vs. Boston Celtics`, `Seat held for`,
       and `Server-rendered · hydrating…`. The page is complete before any JavaScript.
-- [ ] The badge in the browser reads **"Interactive · hydrated Nms after navigation"**.
+- [ ] Before the reload, the badge reads "Interactive · client-side navigation". After the reload it
+      reads **"Interactive · hydrated Nms after navigation"**.
 - [ ] With JS disabled: the full screen renders, the countdown is frozen, buttons are disabled.
 - [ ] Browser console: no hydration warnings.
 
@@ -192,7 +197,9 @@ In scenario 3, both rows show the **same `order=`** and exactly one says `[repla
 **Expected**
 - [ ] **Continue to payment** is gone, replaced by a banner: "The price of this seat changed",
       ~~$185.00~~ → **$210.00** (+$25.00).
-- [ ] Keyboard focus is on the banner. The countdown keeps running.
+- [ ] Keyboard focus is on the banner. **The countdown keeps running. That's intended:** the banner
+      doesn't pause the hold, and a frozen timer would mislead the fan about how long the seat is
+      still reserved.
 - [ ] Analytics: `price_changed` (18500 → 21000), then `price_banner_shown` **once**. Click out
       and back in: it still appears only once.
 5. **🖱** Press **Continue at $210.00**, then **Continue to payment**.
@@ -234,7 +241,7 @@ In scenario 3, both rows show the **same `order=`** and exactly one says `[repla
 
 **Expected**
 - [ ] Banner: "Good news: the price dropped", ~~$185.00~~ → **$160.00** (−$25.00).
-- [ ] No pay button until **Continue at $160.00** is pressed.
+- [ ] No pay button until **Continue at $160.00** is pressed. The countdown keeps running (same as T6).
 
 ---
 
