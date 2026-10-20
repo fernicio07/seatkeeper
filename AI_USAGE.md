@@ -238,3 +238,20 @@ true for both causes.
 **Validation:** regression tests: hold-lost complete → 409 carrying FAILED, no `replayed`, no
 `checkout_replayed`; duplicate after decline → 409, one charge. 47 API + 12 shared pass. Browser:
 hold-lost session on mobile shows the new copy and no raw error.
+
+## Step 8: Full transition coverage
+
+**Written by me:** the 16 table-row tests filling the placeholders.
+
+**AI review of my tests (fixed):** my draft replaced the whole file, which would have deleted the
+review regression and step-7 specs, so it was merged into the placeholder section instead. One test
+("PENDING_PAYMENT does not expire") used `holdValid: false`, which since my Must Fix #2 means
+FAILED, so it would have failed; split into "frozen past expiry with a valid hold".
+"Rejects on terminal" only covered EXPIRED; added COMPLETED and FAILED.
+
+**Added by AI:** gap tests (stale COMPLETE → VERSION_CONFLICT; wrong key on COMPLETED is not a
+replay; price locked in PENDING_PAYMENT; expiry beats a simultaneous price change) and a
+status × event **transition matrix** with per-cell invariants. `npm run coverage` script.
+
+**Validation:** 77 API + 12 shared tests, 0 todo, all pass. Coverage: machine 98% branches (only
+the unreachable `never` fallback uncovered), view derivation 100%.

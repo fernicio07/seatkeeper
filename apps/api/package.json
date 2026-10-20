@@ -6,7 +6,8 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "typecheck": "tsc --noEmit -p .",
     "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts"
+    "start": "tsx src/server.ts",
+    "coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage --coverageReporters=text"
   },
   "dependencies": {
     "@seatkeeper/shared": "*",

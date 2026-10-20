@@ -20,7 +20,8 @@ npm install
 npm run dev                      # API on :4000 + web on http://localhost:3000
                                  # (or individually: npm run dev -w @seatkeeper/api | web)
 ./scripts/demo-api.sh            # walks price change, expiry, double-complete via curl
-npm test                         # Jest across workspaces
+npm test                         # Jest across workspaces (77 API + 12 shared)
+npm run coverage                 # with per-file coverage
 npm run typecheck
 ```
 
@@ -199,6 +200,20 @@ Optimistic concurrency: every write is `compareAndSet(id, expectedVersion, next)
 the store bumps `version`. Losers get the fresh session back (→ HTTP 409), which
 doubles as the cross-surface UX signal. External side effects (charges) are
 additionally deduped by the per-session `idempotencyKey`.
+
+## Testing strategy
+
+- **State machine** (`checkout-machine.test.ts`): one test per transition-table row; a
+  **status × event matrix** asserting every cell's outcome *and* invariants that hold in every cell
+  (input never mutated, `version` never bumped by the machine, `priceAtStart`/`idempotencyKey`
+  immutable, terminal states never leave); regression specs for bugs found in review.
+  98% branch coverage; the uncovered lines are the `never` exhaustiveness fallback.
+- **View derivation** (`view-derived.test.ts`): the precedence table and every price scenario. 100%.
+- **Routes + service** (`app.test.ts`, via `app.inject()`): happy path, expiry, price change,
+  duplicate completion under a forced worst-case interleaving (`BarrierGateway`), layering without
+  gateway idempotency (`NaiveGateway`), seat exclusivity and hold lifecycle, resilience, analytics.
+- **Not under Jest:** React components (banner blocking, focus, copy) were verified in the browser.
+  React Testing Library tests are the next addition.
 
 ## Tradeoffs / more time
 - Hold-lost and timed-out both surface as EXPIRED; an `expiryReason` would let the client offer
