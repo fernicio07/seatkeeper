@@ -12,6 +12,10 @@ id and re-validate on every resume. The slice covers three state changes end to 
 3. **Duplicate completion**: two surfaces complete the same session → one order, one charge; the
    second surface sees "Already purchased" with the same order number.
 
+![Demo: create, resume on mobile, price-change banner, duplicate completion, expiry, inventory](docs/demo.gif)
+
+*Recorded from the running app with real clicks. Full step-by-step script: [MANUAL_TESTING.md](MANUAL_TESTING.md).*
+
 Stack: Node + TypeScript + Fastify (in-memory store), Next.js 16 App Router, Jest. Payment,
 inventory, and analytics are stubs behind `PaymentGateway`, `InventoryService`, `AnalyticsSink`.
 

@@ -350,3 +350,17 @@ command inline with its expected output, and each test starts with its own reset
 **Validation:** every ⌨️ command run as written against fresh servers. Outputs match the script
 (`{"reset":true}`, price/decline/clock acks, `{"revoked":…}`, the four T2 lines). T17's funnel
 numbers reproduced exactly from a fresh server.
+
+## Demo GIF (`docs/demo.gif`)
+
+**My request:** a GIF clicking through the scenarios for reviewers.
+
+**AI:** wrote a Playwright script (kept outside the repo, to avoid adding heavy dev dependencies)
+that drives the running app in headless Chrome with real clicks. It covers create, resume on
+mobile, the price-change banner on both surfaces, the two-surface race, expiry with recovery, and
+a second fan blocked. It captions each state and encodes the frames into a 0.5 MB GIF. Recording
+only: it hides Next's dev-mode indicator. The app is unchanged.
+
+**Validation:** every frame reviewed. The first takes were fixed: the mobile surface wrapped out of
+view at 1000px, the dev badges were visible, and expiry needed a reload to re-validate because
+headless Chrome fires no focus event on an already-focused page.
