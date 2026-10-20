@@ -1,7 +1,26 @@
 # AI usage log
 
 Running, honest log of who designed/wrote what, and how AI output was validated.
-Updated at every commit.
+Updated at every commit. The step-by-step log follows the summary.
+
+## At a glance
+
+| Area | Designed by | Written by | How it was validated |
+|---|---|---|---|
+| Session state machine (`evaluate`, `transition`), guard order | Me, choosing from AI-presented alternatives | Me; AI reviewed each revision | Red-first regression specs, transition matrix, hand-traced table |
+| Concurrency (optimistic `version` CAS vs locks) | Me | Store CAS: AI; machine's version guard: me | Store tests; forced-interleaving race tests |
+| Resume + price-change UX (`acceptedPrice`, precedence, blocking banner) | Me | `deriveCheckoutView`, `useAcceptedPrice`, `displayError`: me. Components/wiring: AI | 12 view tests; browser walkthroughs per scenario |
+| Duplicate completion decisions (gateway idempotency, price guard placement, `orderId`, no FAILED replay) | Me | Machine changes: me. Service retry / replay plumbing: AI | Barrier/naive-gateway race tests; demo script; two-surface browser race |
+| API routes, service shell, stubs, inventory lifecycle | AI (reviewed by me) | AI | Route tests via `app.inject()`; curl demo script |
+| Next.js setup, SSR page, countdown, mobile route, demo page | AI (reviewed by me) | AI | Raw-HTML `curl`, hydration checks, browser verification |
+| Tests | Table-row specs: me. Matrix, race harness, scaffolding: AI | Both | 89 tests, coverage report |
+| Docs | Both | AI drafted, I reviewed | Re-checked against the running app |
+
+**Bugs caught by review rather than by me first:** guard ordering (version check blocked replays);
+re-PAY needing the price check; the PENDING_PAYMENT price gap; double-held seats; charging after a
+lost hold; the FAILED-replay collision with lost holds. Bugs AI introduced and then caught while
+validating: API on the wrong port (`PORT`), a misleading hydration timing, a mobile bezel lost to a
+breakpoint, a duplicate re-fetch on tab switch, and the AI's own "holds have no TTL" decision.
 
 ## Step 1 — State machine, store, stub interfaces
 
@@ -255,3 +274,24 @@ status × event **transition matrix** with per-cell invariants. `npm run coverag
 
 **Validation:** 77 API + 12 shared tests, 0 todo, all pass. Coverage: machine 98% branches (only
 the unreachable `never` fallback uncovered), view derivation 100%.
+
+## Step 9: Documentation and final polish
+
+**Mine:** proposed a browser testing guide for the README.
+
+**AI review of the guide (fixed before publishing):** the handoff link is "📱 Continue on your
+phone", not "Resume on mobile". The duplicate-completion steps didn't reproduce: tested with real
+clicks in two tabs, the second surface re-validates on focus and converges to "Order confirmed" with
+the same order id, so "Already purchased" never appears by hand. The guide now presents both
+behaviors honestly (re-validation as the first line of defense, idempotent replay as the second),
+and AI added a dev-only **⚡ Race both surfaces** button to the demo page so the replay path is
+demonstrable live. Verified with one real click: web "Order confirmed", mobile "Already purchased",
+same order id.
+
+**AI:** restructured the README into the brief's sections (it had grown by appending per step);
+removed stale statements ("lands in step 7", "Declined + restart", a `PRICE_CHANGED` definition
+predating `acceptedPrice`, "losers get a 409"); completed the state table (lost-hold rows); added
+this summary table and an `engines` field (Node 22+).
+
+**Validation:** all 89 tests pass and typecheck is clean; every command and UI label in the README
+guide was checked against the running app.
