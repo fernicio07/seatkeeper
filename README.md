@@ -89,6 +89,38 @@ screen still renders correctly (frozen countdown, inert buttons).
 - **Production gap:** possession of the id is enough to act on the session. Real handoff would use
   a short-lived, single-use token bound to the fan's account.
 
+## Price change & expiry UX
+
+**The screen is a pure function:** `view = deriveCheckoutView(session, acceptedPrice)`
+(`packages/shared`). Error codes are only transient messages; a 409 still carries the fresh
+session, and re-deriving from it shows the right screen.
+
+**`acceptedPrice`** is per-surface client state: the price this fan has agreed to *here*. It starts
+at `priceAtStart` (what the fan committed to when checkout began, not "what this surface last
+showed", which would let mobile display a bumped price with no explanation). Acknowledging sets it
+to the exact price printed on the button pressed. `pay` sends it, so the UI gate and the server's
+`PRICE_MISMATCH` guard enforce the same rule at two layers.
+
+| Precedence | Condition | Screen |
+|---|---|---|
+| 1 | COMPLETED | Confirmation |
+| 2 | FAILED | Declined + restart |
+| 3 | EXPIRED | "Your hold ended" + one-tap restart (new session, same surface, today's price) |
+| 4 | ACTIVE or PENDING_PAYMENT, `currentPrice !== acceptedPrice` | **Blocking price banner** |
+| 5 | PENDING_PAYMENT | Place order |
+| 6 | ACTIVE | Pay + countdown |
+
+**Why the banner blocks:** consent to the exact amount (live-event ticketing is under specific
+all-in-pricing rules); a toast can be missed while the old CTA is still tappable; the server
+rejects a mismatch anyway, so a gate beats an after-the-click error. The banner *replaces* the pay
+button, so blocking is structural. It blocks on decreases too (positive copy). Focus moves to it.
+
+**Rule 4 covers PENDING_PAYMENT** so a stale surface can't show "Place order · $210" when the fan
+agreed to $210 only on the *other* device. (A matching server guard on `complete` lands in step 7.)
+
+**Expiry:** at local zero the UI shows "Confirming your hold…" and asks the server, which decides.
+Recovery is a Server Action form, so it works before hydration.
+
 ## Session state model
 
 `ACTIVE → PENDING_PAYMENT → COMPLETED`, plus terminal `EXPIRED` and `FAILED`.
@@ -126,4 +158,8 @@ additionally deduped by the per-session `idempotencyKey`.
 - Countdown residual error ≈ time from API response to hydration (errs generous); server is the authority.
 - Handoff is a plain link; production would use QR / push / universal links + a signed handoff token.
 - Event time zone is pinned to Eastern; real listings would carry `venueTimeZone`.
+- Acknowledgment is per-surface and not persisted: accepting on web means mobile asks again, and
+  a reload asks again. Errs toward over-asking; a server-side ack would sync it at the cost of a route.
+- No push: a price change is discovered at the next interaction (refocus, countdown, action), never
+  by a silent charge. SSE would surface it live.
 _(more as steps land)_

@@ -1,10 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CheckoutResponse, CheckoutSession } from '@seatkeeper/shared';
+import { deriveCheckoutView, type CheckoutResponse, type CheckoutSession } from '@seatkeeper/shared';
 import { checkoutApi } from '@/lib/api-client';
 import { formatMoney } from '@/lib/format';
 import { Countdown } from './Countdown';
+import { PriceChangeBanner } from './PriceChangeBanner';
+import { RestartCheckout } from './RestartCheckout';
+import { useAcceptedPrice } from '@/lib/useAcceptedPrice';
 import { useHydrated } from './useHydrated';
 
 interface Props {
@@ -17,18 +20,27 @@ interface Props {
  * The interactive island. Server-rendered for first paint (props in, HTML out),
  * then hydrated. It holds a *copy* of server state and only ever replaces it
  * wholesale with what the API returns — it never computes status or price itself.
+ *
+ * Render-from-state: what's on screen is deriveCheckoutView(session,
+ * acceptedPrice). Error codes are only a transient message; a 409 still carries
+ * the fresh session, and re-deriving from it shows the right screen.
  */
 export function CheckoutPanel({ initialSession, initialServerTime, surface }: Props) {
   const [session, setSession] = useState(initialSession);
   const [serverTime, setServerTime] = useState(initialServerTime);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Local countdown reached zero; the server hasn't confirmed yet.
+  const [confirming, setConfirming] = useState(false);
   const hydrated = useHydrated();
+  const { acceptedPrice, acknowledge } = useAcceptedPrice(session.id, session.priceAtStart);
+  const view = deriveCheckoutView(session, acceptedPrice);
 
   const apply = useCallback((res: CheckoutResponse) => {
     if (res.session) setSession(res.session);
     setServerTime(res.serverTime);
     setError(res.error ?? null);
+    setConfirming(false);
   }, []);
 
   const run = async (op: () => Promise<CheckoutResponse>) => {
@@ -59,8 +71,7 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
 
   // Re-validate whenever this surface becomes active again. While it was in
   // the background the other surface may have paid, completed, or the price
-  // may have moved — its local copy can't be trusted. (Presentation of what
-  // changed is step 5.)
+  // may have moved — its local copy can't be trusted.
   useEffect(() => {
     const onActive = () => {
       if (document.visibilityState === 'visible') void refresh();
@@ -79,30 +90,53 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
 
   return (
     <div className="panel" data-surface={surface}>
-      {/* TODO(step 5): price-change banner + expiry recovery UX (owned by me). */}
-      <p className="price">{formatMoney(session.currentPrice)}</p>
+      {/* While the banner is up, it owns price communication. */}
+      {view.kind !== 'PRICE_CHANGED' && <p className="price">{formatMoney(session.currentPrice)}</p>}
 
-      {session.status === 'ACTIVE' && (
-        <>
-          <Countdown expiresAt={session.expiresAt} serverTime={serverTime} onExpire={refresh} />
-          <button
-            className="primary"
-            disabled={!interactive}
-            onClick={() =>
-              run(() =>
-                checkoutApi.pay(session.id, {
-                  expectedVersion: session.version,
-                  acceptedPrice: session.currentPrice,
-                }),
-              )
-            }
-          >
-            Continue to payment
-          </button>
-        </>
+      {/* Only while the hold can actually expire. PRICE_CHANGED can now also be a
+          PENDING_PAYMENT session, whose hold is frozen — no countdown there. */}
+      {session.status === 'ACTIVE' &&
+        (confirming ? (
+          <p className="confirming" role="status">Confirming your hold…</p>
+        ) : (
+          // Keeps ticking under the banner: the hold really is still running.
+          <Countdown
+            expiresAt={session.expiresAt}
+            serverTime={serverTime}
+            onExpire={() => {
+              setConfirming(true);
+              void refresh();
+            }}
+          />
+        ))}
+
+      {view.kind === 'PRICE_CHANGED' && (
+        <PriceChangeBanner
+          fromPrice={view.fromPrice}
+          toPrice={view.toPrice}
+          onAcknowledge={acknowledge}
+          disabled={!interactive}
+        />
       )}
 
-      {session.status === 'PENDING_PAYMENT' && (
+      {view.kind === 'READY' && (
+        <button
+          className="primary"
+          disabled={!interactive || confirming}
+          onClick={() =>
+            run(() =>
+              checkoutApi.pay(session.id, {
+                expectedVersion: session.version,
+                acceptedPrice, // what the fan agreed to — never session.currentPrice
+              }),
+            )
+          }
+        >
+          Continue to payment
+        </button>
+      )}
+
+      {view.kind === 'PENDING_PAYMENT' && (
         <>
           <p className="muted">Paying with Visa •••• 4242 (stub)</p>
           <button
@@ -122,9 +156,27 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
         </>
       )}
 
-      {session.status === 'COMPLETED' && <p className="notice success">You&apos;re going! Order confirmed.</p>}
-      {session.status === 'EXPIRED' && <p className="notice">This checkout expired and the seat was released.</p>}
-      {session.status === 'FAILED' && <p className="notice danger">Payment was declined.</p>}
+      {view.kind === 'COMPLETED' && <p className="notice success">You&apos;re going! Order confirmed.</p>}
+
+      {view.kind === 'EXPIRED' && (
+        <RestartCheckout
+          listingId={session.listingId}
+          surface={surface}
+          tone="neutral"
+          title="Your hold on this seat ended"
+          body="Holds are temporary so seats stay available to every fan. The seat may still be available, at today's price."
+        />
+      )}
+
+      {view.kind === 'FAILED' && (
+        <RestartCheckout
+          listingId={session.listingId}
+          surface={surface}
+          tone="danger"
+          title="Payment was declined"
+          body="You weren't charged. Start a new checkout to try again."
+        />
+      )}
 
       {error && <p className="notice danger" role="alert">{error}</p>}
 

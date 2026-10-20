@@ -105,3 +105,38 @@ is *presented* (price banner, expiry recovery) is step 5, which I'm designing.
 **Validation:** typecheck clean, 16 API tests pass. In the browser: web page → side-by-side demo;
 both surfaces SSR the same session with matching API-anchored countdowns; paying on mobile and
 completing out-of-band via curl were both reflected on web after re-validation.
+
+## Step 5: Price-change + expiration UX ("core two state changes" milestone)
+
+**Designed by me (after AI laid out alternatives):** view logic as a pure shared
+`deriveCheckoutView`; client-local `acceptedPrice` starting at `priceAtStart`; block on price
+decreases too; inline banner replacing the pay button; one-tap recovery on the same surface.
+Closed the PENDING_PAYMENT gap the AI raised: the banner rule applies to PENDING_PAYMENT too
+(option a), with a server-side `acceptedPrice` guard on `complete` planned for step 7 (option b).
+
+**Written by me:** `deriveCheckoutView()` (packages/shared/src/view-derived.ts) and
+`useAcceptedPrice()` (apps/web/lib/useAcceptedPrice.ts).
+
+**Scaffolded by AI (I drafted a first version; AI review changed it):** view types,
+`PriceChangeBanner`, `RestartCheckout`, `CheckoutPanel` wiring, shared Jest setup. Review changes:
+- My restart action always redirected to the web route; folded into `startCheckout` with a
+  surface → path whitelist (also avoids an open redirect).
+- Banner now passes the *printed* price to `acknowledge` (a re-fetch between render and tap would
+  otherwise accept a price the fan never saw).
+- Focus moves to the banner (labelled region) instead of `role="alert"` + unused `tabIndex`.
+- Test file imported a factory from `apps/api`; shared must not depend on apps.
+
+**AI review of my code:**
+- Countdown was shown for any PRICE_CHANGED view; with my PENDING_PAYMENT rule that would show a
+  ticking timer on a frozen hold. Wiring now gates the countdown on `status === 'ACTIVE'`.
+- `key={session.id}` added on `CheckoutPanel` so a restart (new id) remounts with fresh state.
+- Open note on my hook: its `useEffect` that re-syncs `acceptedPrice` from props is redundant
+  given the key, and is a footgun (a caller passing `currentPrice` would silently auto-accept
+  every change). Kept as written for now; candidate to remove.
+
+**Validation:** 12 new view tests (precedence, PENDING gap, drop, double bump, bounce-back,
+fresh-mobile, purity) all pass; API suite still green; typecheck clean. In the browser:
+(1) price bump on resume → banner, no pay button, focus on banner, countdown ticking → accept →
+pay at $210 accepted by server; (2) same PENDING session opened on mobile → banner, no Place order,
+no countdown → accept → Place order $210; (3) expired session on mobile → restart → new session id,
+stayed on `/m/`, fresh $210 hold, no banner.

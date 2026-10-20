@@ -22,7 +22,7 @@ export default async function MobileCheckoutPage({ params }: { params: Promise<{
         <div className="phone-screen">
           <p className="resumed-from">Resumed from a link · session {id.slice(3, 11)}</p>
           <EventHeader listing={data.listing} />
-          <CheckoutPanel initialSession={data.session} initialServerTime={data.serverTime} surface="mobile" />
+          <CheckoutPanel key={data.session.id} initialSession={data.session} initialServerTime={data.serverTime} surface="mobile" />
         </div>
       </div>
     </main>

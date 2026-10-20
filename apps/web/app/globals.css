@@ -109,3 +109,14 @@ body {
   border: 12px solid #111; border-radius: 48px;
   box-shadow: 0 20px 60px rgb(0 0 0 / 0.35);
 }
+
+/* ── step 5: banner + recovery ─────────────────────── */
+.notice h3 { margin: 0 0 4px; font-size: 1rem; }
+.notice p { margin: 0 0 12px; }
+.notice form, .notice .primary { width: 100%; }
+.notice.warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--text); }
+.price-change { display: grid; gap: 4px; outline: none; }
+.price-change:focus-visible { box-shadow: 0 0 0 3px var(--brand); }
+.price-change del { color: var(--muted); }
+.price-change .text-link { justify-self: center; margin-top: 8px; }
+.confirming { margin: 0; color: var(--muted); }
