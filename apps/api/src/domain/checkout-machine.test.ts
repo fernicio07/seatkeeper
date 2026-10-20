@@ -113,3 +113,15 @@ describe('step 7: COMPLETE price guard + orderId', () => {
     expect(res).toEqual({ ok: true, session: done });
   });
 });
+
+describe('review fix: hold lost mid-payment', () => {
+  it('PENDING_PAYMENT + !holdValid → FAILED (fail safe before any charge)', () => {
+    const s = makeSession({ status: 'PENDING_PAYMENT', version: 2 });
+    expect(evaluate(s, makeCtx({ holdValid: false })).status).toBe('FAILED');
+  });
+
+  it('PENDING_PAYMENT + valid hold past expiresAt stays PENDING_PAYMENT (frozen)', () => {
+    const s = makeSession({ status: 'PENDING_PAYMENT', version: 2 });
+    expect(evaluate(s, makeCtx({ now: s.expiresAt + 1 })).status).toBe('PENDING_PAYMENT');
+  });
+});

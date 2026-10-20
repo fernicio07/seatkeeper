@@ -4,6 +4,7 @@ import {
   type CheckoutDeps,
   type ServiceErrorCode,
   type ServiceResult,
+  type ResumeReason,
   type Surface,
 } from './domain/checkout-service';
 import type { StubInventoryService, StubPaymentGateway, OffsetClock, StubClock } from './services/stubs';
@@ -77,13 +78,26 @@ export function buildApp(deps: CheckoutDeps, opts: { dev?: DevControls; logger?:
 
   // Resume. Safe to call from any surface, any number of times: it only
   // reconciles the session with the world (expiry, price, hold).
-  app.get<{ Params: { id: string }; Querystring: { surface?: Surface } }>('/checkout/:id', {
+  // reason=open: the fan opened this surface (counted as a resume).
+  // reason=revalidate (default): focus / countdown refreshes, not counted, so
+  // background-tab churn can't inflate the resume metric.
+  app.get<{
+    Params: { id: string };
+    Querystring: { surface?: Surface; reason?: ResumeReason };
+  }>('/checkout/:id', {
     schema: {
       params: idParams,
-      querystring: { type: 'object', properties: { surface: { enum: ['web', 'mobile'] } } },
+      querystring: {
+        type: 'object',
+        properties: { surface: { enum: ['web', 'mobile'] }, reason: { enum: ['open', 'revalidate'] } },
+      },
     },
     handler: async (req, reply) =>
-      send(reply, await checkout.resume(req.params.id, req.query.surface ?? 'web'), now()),
+      send(
+        reply,
+        await checkout.resume(req.params.id, req.query.surface ?? 'web', req.query.reason ?? 'revalidate'),
+        now(),
+      ),
   });
 
   app.post<{ Params: { id: string }; Body: { expectedVersion: number; acceptedPrice: number } }>(

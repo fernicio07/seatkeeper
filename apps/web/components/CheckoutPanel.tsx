@@ -10,6 +10,19 @@ import { RestartCheckout } from './RestartCheckout';
 import { useAcceptedPrice } from '@/lib/useAcceptedPrice';
 import { useHydrated } from './useHydrated';
 
+// Render-from-state: codes the derived view already explains get no extra
+// message; anything else is mapped to plain language, never shown raw.
+const displayError = (err?: string) => {
+  if (!err) return null;
+  if (['VERSION_CONFLICT', 'PRICE_MISMATCH', 'SESSION_EXPIRED'].includes(err)) {
+    return null; // Handled natively by view derivation (banners / recovery screens)
+  }
+  if (err === 'SEAT_UNAVAILABLE') {
+    return 'This seat was just claimed by another fan.';
+  }
+  return 'Something went wrong. Please try again.';
+};
+
 interface Props {
   initialSession: CheckoutSession;
   initialServerTime: number;
@@ -65,7 +78,7 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
   const inFlight = useRef<Promise<void> | null>(null);
   const refresh = useCallback(() => {
     inFlight.current ??= checkoutApi
-      .get(session.id, surface)
+      .get(session.id, surface, 'revalidate')
       .then(apply)
       .catch(() => setError('NETWORK_ERROR'))
       .finally(() => {
@@ -195,7 +208,9 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
         />
       )}
 
-      {error && <p className="notice danger" role="alert">{error}</p>}
+      {displayError(error ?? undefined) && (
+        <p className="notice danger" role="alert">{displayError(error ?? undefined)}</p>
+      )}
 
       <p className={`hydration ${hydrated ? 'live' : 'pending'}`} aria-hidden>
         {!hydrated

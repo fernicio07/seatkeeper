@@ -26,6 +26,7 @@ export interface CheckoutDeps {
 }
 
 export type Surface = 'web' | 'mobile';
+export type ResumeReason = 'open' | 'revalidate';
 
 export type ServiceErrorCode =
   | TransitionErrorCode
@@ -106,10 +107,10 @@ export class CheckoutService {
     return { ok: false, error: 'BUSY', session: stored ?? undefined };
   }
 
-  /** GET /checkout/:id — a load that's also a resume event for analytics. */
-  async resume(id: string, surface: Surface): Promise<ServiceResult> {
+  /** GET /checkout/:id. Only an explicit open counts as a resume for analytics. */
+  async resume(id: string, surface: Surface, reason: ResumeReason): Promise<ServiceResult> {
     const result = await this.load(id);
-    if (result.ok) {
+    if (result.ok && reason === 'open') {
       this.track('surface_resumed', id, { surface, status: result.session.status });
     }
     return result;

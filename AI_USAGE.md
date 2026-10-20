@@ -205,3 +205,17 @@ events whitelist) + 5 inventory stub tests. All 41 API + 12 shared tests pass; t
 Demo script: all 4 scenarios correct. Browser: landing shows "Seat unavailable" while held; banner
 fired `price_banner_shown` exactly once and `price_banner_acknowledged` on accept; with the API
 stopped, the checkout page rendered the error boundary.
+
+## Review follow-ups (my items)
+
+**Written by me:** `evaluate()` fails safe (PENDING_PAYMENT + lost hold → FAILED, before any
+charge); `displayError` in `CheckoutPanel` (suppress codes the view already explains, plain
+language otherwise); chose `reason: 'open'` so `surface_resumed` counts real openings only.
+
+**Wired by AI:** `displayError` render; `reason=open` on the SSR fetch and `reason=revalidate` on
+client refreshes; API defaults to `revalidate`.
+
+**Validation:** new machine tests (lost hold → FAILED; frozen hold survives expiry) and an API test
+(revoked hold → complete charges nothing, FAILED, seat free); analytics tests (revalidate not
+counted, open counted). 45 API + 12 shared tests pass. Browser: stale pay after a price bump →
+banner and no raw error; one `surface_resumed` per open.

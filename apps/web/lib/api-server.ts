@@ -10,7 +10,8 @@ export type Surface = 'web' | 'mobile';
 export async function fetchCheckout(id: string, surface: Surface): Promise<CheckoutResponse | null> {
   // no-store: a resume must always re-validate. Caching this response would
   // reintroduce exactly the stale price/expiry bugs the server is guarding.
-  const res = await fetch(`${API_URL}/checkout/${encodeURIComponent(id)}?surface=${surface}`, {
+    // The server render IS the fan opening this surface: reason=open.
+  const res = await fetch(`${API_URL}/checkout/${encodeURIComponent(id)}?surface=${surface}&reason=open`, {
     cache: 'no-store',
   });
   if (res.status === 404) return null;

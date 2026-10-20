@@ -16,6 +16,13 @@ export function evaluate(session: CheckoutSession, ctx: EvaluationContext): Chec
 
   // Once PENDING_PAYMENT, hold is frozen; expiry does not apply.
   if (session.status === 'PENDING_PAYMENT') {
+    // If the hold was revoked/invalidated mid-payment, fail safe instead of charging
+    if (!ctx.holdValid) {
+      return {
+        ...session,
+        status: 'FAILED',
+      };
+    }
     return { ...session };
   }
 

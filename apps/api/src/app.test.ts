@@ -266,10 +266,18 @@ describe('resilience', () => {
 });
 
 describe('analytics', () => {
-  it('GET with ?surface tracks surface_resumed', async () => {
+  it('revalidation GETs (focus/countdown) are not counted as resumes', async () => {
     const t = buildTestApp();
     const s = await startCheckout(t);
-    await t.app.inject({ method: 'GET', url: `/checkout/${s.id}?surface=mobile` });
+    await t.app.inject({ method: 'GET', url: `/checkout/${s.id}?surface=web&reason=revalidate` });
+    await t.app.inject({ method: 'GET', url: `/checkout/${s.id}?surface=web` }); // default = revalidate
+    expect(t.analytics.events.filter((e) => e.name === 'surface_resumed')).toHaveLength(0);
+  });
+
+  it('GET with reason=open tracks surface_resumed with the surface', async () => {
+    const t = buildTestApp();
+    const s = await startCheckout(t);
+    await t.app.inject({ method: 'GET', url: `/checkout/${s.id}?surface=mobile&reason=open` });
     expect(t.analytics.events).toContainEqual(
       expect.objectContaining({ name: 'surface_resumed', sessionId: s.id, props: expect.objectContaining({ surface: 'mobile' }) }),
     );
@@ -296,5 +304,24 @@ describe('analytics', () => {
     expect(t.analytics.events).toContainEqual(expect.objectContaining({ name: 'price_banner_acknowledged' }));
     const bad = await t.app.inject({ method: 'POST', url: '/events', payload: { name: 'drop_tables', sessionId: 'x', surface: 'web' } });
     expect(bad.statusCode).toBe(400);
+  });
+});
+
+describe('review fix: hold revoked while PENDING_PAYMENT', () => {
+  it('complete does not charge; session becomes FAILED and the seat is free', async () => {
+    const t = buildTestApp();
+    const s = await startCheckout(t);
+    await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/pay`, payload: { expectedVersion: 1, acceptedPrice: 18500 } });
+    t.inventory.revokeHold(s.inventoryHoldId);
+
+    const res = await t.app.inject({
+      method: 'POST',
+      url: `/checkout/${s.id}/complete`,
+      payload: { expectedVersion: 2, idempotencyKey: s.idempotencyKey, acceptedPrice: 18500 },
+    });
+
+    expect(res.json().session.status).toBe('FAILED');
+    expect(t.payments.chargeCount).toBe(0);
+    expect(await t.inventory.isAvailable('lst_heat_1')).toBe(true);
   });
 });

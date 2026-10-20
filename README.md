@@ -61,7 +61,7 @@ best-effort: a failure is logged, never turned into a 500 for an operation that 
 Production: an outbox with retries.
 
 ### Analytics
-Server: `checkout_started`, `status_*`, `price_changed`, `surface_resumed` (with surface),
+Server: `checkout_started`, `status_*`, `price_changed`, `surface_resumed` (with surface; only `reason=open`, so focus/countdown refreshes don't inflate it),
 `checkout_replayed`. Client (via `POST /events`): `price_banner_shown` (once per distinct change,
 guarded against Strict Mode double effects), `price_banner_acknowledged`.
 
@@ -186,7 +186,8 @@ skipping the version check for them can't cause a lost update.
 
 ACTIVE sessions whose inventory hold is no longer valid (seat sold elsewhere) also become EXPIRED.
 
-Expiry does not apply in PENDING_PAYMENT: once a charge is in flight the hold is frozen.
+Expiry does not apply in PENDING_PAYMENT: once a charge is in flight the hold is frozen. If the hold is
+nonetheless lost (revoked), `evaluate()` moves the session to FAILED *before* any charge.
 
 ### Concurrency
 Optimistic concurrency: every write is `compareAndSet(id, expectedVersion, next)`;

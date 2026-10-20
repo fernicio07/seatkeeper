@@ -15,7 +15,9 @@ async function call(path: string, body?: unknown): Promise<CheckoutResponse> {
 }
 
 export const checkoutApi = {
-  get: (id: string, surface: Surface) => call(`/checkout/${id}?surface=${surface}`),
+  /** reason=revalidate: focus/countdown refreshes — not counted as a resume. */
+  get: (id: string, surface: Surface, reason: 'open' | 'revalidate') =>
+    call(`/checkout/${id}?surface=${surface}&reason=${reason}`),
   pay: (id: string, body: { expectedVersion: number; acceptedPrice: number }) =>
     call(`/checkout/${id}/pay`, body),
   complete: (id: string, body: { expectedVersion: number; idempotencyKey: string; acceptedPrice: number }) =>
