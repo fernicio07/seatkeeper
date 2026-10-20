@@ -325,3 +325,36 @@ describe('review fix: hold revoked while PENDING_PAYMENT', () => {
     expect(await t.inventory.isAvailable('lst_heat_1')).toBe(true);
   });
 });
+
+describe('FAILED is terminal and never replayed (decision: drop FAILED replays)', () => {
+  const completeBody = (s: { idempotencyKey: string }) => ({ expectedVersion: 2, idempotencyKey: s.idempotencyKey, acceptedPrice: 18500 });
+
+  it('hold lost mid-payment: complete is a 409 carrying FAILED, never a "replay"', async () => {
+    const t = buildTestApp();
+    const s = await startCheckout(t);
+    await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/pay`, payload: { expectedVersion: 1, acceptedPrice: 18500 } });
+    t.inventory.revokeHold(s.inventoryHoldId);
+
+    const res = await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/complete`, payload: completeBody(s) });
+
+    // evaluate() persisted FAILED (v3), so the v2 request is stale: VERSION_CONFLICT, not INVALID_TRANSITION.
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: 'VERSION_CONFLICT', session: { status: 'FAILED' } });
+    expect(res.json().replayed).toBeUndefined();
+    expect(t.analytics.events.map((e) => e.name)).not.toContain('checkout_replayed');
+  });
+
+  it('duplicate complete after a decline: 409 carrying FAILED, no second charge', async () => {
+    const t = buildTestApp();
+    const s = await startCheckout(t);
+    t.payments.nextOutcome = 'declined';
+    await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/pay`, payload: { expectedVersion: 1, acceptedPrice: 18500 } });
+    await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/complete`, payload: completeBody(s) });
+
+    const dup = await t.app.inject({ method: 'POST', url: `/checkout/${s.id}/complete`, payload: completeBody(s) });
+
+    expect(dup.statusCode).toBe(409);
+    expect(dup.json().session.status).toBe('FAILED');
+    expect(t.payments.chargeCount).toBe(1);
+  });
+});

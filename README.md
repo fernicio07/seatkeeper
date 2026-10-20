@@ -162,6 +162,11 @@ matching key and returns a replay. The losing surface gets **200 `replayed: true
 `orderId` and shows "Already purchased". `complete` also carries `acceptedPrice` (checked after
 the replay check), so a stale surface can't complete at a price it never showed.
 
+**Only COMPLETED is replayed.** FAILED has two causes (a declined charge, or a hold lost before any
+charge), so a blanket FAILED replay would report a "replay" for a payment that was never attempted.
+FAILED is terminal: a duplicate complete gets a 409 carrying the FAILED session (`VERSION_CONFLICT`,
+since the FAILED write bumped the version) and the UI renders recovery from state.
+
 Tests force the worst case with a `BarrierGateway` that holds each charge until both requests
 arrive. A `NaiveGateway` test (no key dedupe) shows the layering: still one order, but two charges.
 
@@ -212,4 +217,6 @@ additionally deduped by the per-session `idempotencyKey`.
   needs crash recovery (reconcile a stuck claim with the gateway by key). Not worth it at this scope.
 - `orderId` is the charge id. Real systems separate orders from payments (one order can have
   retries/refunds).
+- FAILED doesn't record *why* (declined vs hold lost), so its copy is generic. A `failureReason`
+  field would allow specific copy and, if wanted, replay of declines only.
 _(more as steps land)_

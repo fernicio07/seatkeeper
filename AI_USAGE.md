@@ -219,3 +219,22 @@ client refreshes; API defaults to `revalidate`.
 (revoked hold → complete charges nothing, FAILED, seat free); analytics tests (revalidate not
 counted, open counted). 45 API + 12 shared tests pass. Browser: stale pay after a price bump →
 banner and no raw error; one `surface_resumed` per open.
+
+## FAILED replay: tried, found a collision, reverted
+
+**My call:** drop FAILED replays (Option 1). Recovery from any failure is a fresh checkout, so
+replaying failures adds state-machine complexity for little value.
+
+**What happened:** I first extended the replay-first check to FAILED. AI applied it and probed the
+hold-lost path: a `complete` on a session `evaluate()` had moved to FAILED returned
+`200 replayed: true` and logged `checkout_replayed`, although no payment was ever attempted. My own
+Must Fix #2 had given FAILED a second origin. Reverted before committing. AI corrected one detail in
+my reasoning: the fall-through yields `VERSION_CONFLICT` (version check precedes the status check),
+not `INVALID_TRANSITION`.
+
+**Also fixed (AI):** FAILED copy said "Payment was declined", false for a lost hold; now generic and
+true for both causes.
+
+**Validation:** regression tests: hold-lost complete → 409 carrying FAILED, no `replayed`, no
+`checkout_replayed`; duplicate after decline → 409, one charge. 47 API + 12 shared pass. Browser:
+hold-lost session on mobile shows the new copy and no raw error.

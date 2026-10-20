@@ -203,8 +203,11 @@ export function CheckoutPanel({ initialSession, initialServerTime, surface }: Pr
           listingId={session.listingId}
           surface={surface}
           tone="danger"
-          title="Payment was declined"
-          body="You weren't charged. Start a new checkout to try again."
+          // FAILED has two causes (card declined, or the seat was lost before we
+          // charged), and the session doesn't record which, so the copy must be
+          // true for both. A failureReason field would allow specific copy.
+          title="We couldn't complete this purchase"
+          body="You weren't charged. The seat may still be available. Start a new checkout to try again."
         />
       )}
 
