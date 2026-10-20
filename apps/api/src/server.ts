@@ -7,7 +7,9 @@ import {
   StubPaymentGateway,
 } from './services/stubs';
 
-const PORT = Number(process.env.PORT ?? 4000);
+// API_PORT, not PORT: tools (and Next) commonly set PORT for the whole process
+// tree, which would silently put the API on the web app's port.
+const PORT = Number(process.env.API_PORT ?? 4000);
 const TTL_MS = Number(process.env.CHECKOUT_TTL_MS ?? 5 * 60 * 1000);
 const DEV = process.env.NODE_ENV !== 'production';
 

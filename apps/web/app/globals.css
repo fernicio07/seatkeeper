@@ -1,0 +1,70 @@
+:root {
+  --bg: #f4f2ee;
+  --card: #ffffff;
+  --text: #16181d;
+  --muted: #6b6f78;
+  --line: #e4e1da;
+  --brand: #0b5cff;
+  --brand-text: #ffffff;
+  --success: #12805c;
+  --danger: #c4302b;
+  --warn-bg: #fff4d6;
+  --warn-line: #e9b949;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --card: #181b21;
+    --text: #eceef2;
+    --muted: #9aa0ab;
+    --line: #2a2e36;
+    --brand: #4c8dff;
+    --warn-bg: #3a2f12;
+    --warn-line: #a8832a;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.45 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+.shell { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+.card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.event { padding: 24px; border-bottom: 1px dashed var(--line); }
+.event h1 { margin: 4px 0; font-size: 1.5rem; line-height: 1.2; }
+.eyebrow { margin: 0; font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); margin: 0; }
+.seat { display: flex; gap: 24px; margin: 16px 0 0; }
+.seat dt { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.seat dd { margin: 0; font-size: 1.25rem; font-weight: 600; }
+.panel { padding: 24px; display: grid; gap: 12px; }
+.price { margin: 0; font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.countdown { margin: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.countdown.urgent strong { color: var(--danger); }
+.primary {
+  appearance: none;
+  border: 0;
+  border-radius: 10px;
+  padding: 14px 16px;
+  font: inherit;
+  font-weight: 600;
+  background: var(--brand);
+  color: var(--brand-text);
+  cursor: pointer;
+}
+.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.notice { margin: 0; padding: 12px; border-radius: 10px; border: 1px solid var(--line); }
+.notice.success { color: var(--success); border-color: currentColor; }
+.notice.danger { color: var(--danger); border-color: currentColor; }
+.hydration { margin: 8px 0 0; font-size: 0.75rem; font-family: ui-monospace, monospace; }
+.hydration.pending { color: var(--danger); }
+.hydration.live { color: var(--success); }

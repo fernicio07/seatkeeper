@@ -60,3 +60,26 @@ race (both requests past the dry run before either writes), replay signaling, an
 **Validation:** 15 tests pass (store, machine regressions, 6 route tests), `tsc` clean; ran the
 server and walked all three scenarios with `scripts/demo-api.sh` — output matched the
 transition table by hand.
+
+## Step 3 — Web checkout screen (SSR + countdown)
+
+**Scaffolded by AI (reviewed by me):** Next 16 App Router app (manual setup, `/api` rewrite proxy,
+`transpilePackages`), landing page with a Server Action, SSR checkout page, `EventHeader` (server)
+vs `CheckoutPanel` (client island) split, hydration-safe `Countdown`, `useHydrated` badge, CSS.
+API change: every response now carries `serverTime`; added read-only `GET /listings/:id`.
+
+**Bugs found while validating in the browser (fixed):**
+- API bound to port 3000: the preview launcher sets `PORT` for the whole process tree and the API
+  read `PORT`. Switched to a dedicated `API_PORT`.
+- Hydration badge showed a misleading 4.8s: `performance.now()` counts from the *document* load,
+  and the Server Action redirect is a client-side navigation. Now reports timing only on a real
+  document load.
+
+**Validation:** typecheck clean, 16 API tests pass. In the browser: landing → start → checkout
+renders; `curl` of the page shows event/seat/price/countdown in raw HTML with the badge in its
+pre-hydration state; no hydration warnings in the console; pay → place order → confirmed;
+fast-forwarded the API clock 4:50, loaded the page → countdown showed 0:07 (API-anchored, not
+browser clock) → at zero it re-fetched and rendered EXPIRED.
+
+**Known gap (deliberate):** a changed price currently just renders the new `currentPrice`. The
+blocking price banner is step 5, which I'm designing.

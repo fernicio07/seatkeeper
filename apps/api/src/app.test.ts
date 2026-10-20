@@ -88,3 +88,12 @@ describe('checkout routes', () => {
     expect((await t.app.inject({ method: 'POST', url: '/checkout', payload: {} })).statusCode).toBe(400);
   });
 });
+
+describe('response envelope', () => {
+  it('includes the API clock as serverTime (respects the injected clock)', async () => {
+    const t = buildTestApp();
+    t.clock.advance(1234);
+    const res = await t.app.inject({ method: 'POST', url: '/checkout', payload: { listingId: 'lst_knicks_1' } });
+    expect(res.json().serverTime).toBe(t.clock.now());
+  });
+});

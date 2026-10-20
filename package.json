@@ -7,9 +7,11 @@
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev -w @seatkeeper/api\" \"npm run dev -w @seatkeeper/web\""
   },
   "devDependencies": {
+    "concurrently": "^10.0.6",
     "typescript": "~5.9"
   }
 }

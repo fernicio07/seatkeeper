@@ -68,3 +68,11 @@ export type TransitionErrorCode =
 export type TransitionResult =
   | { ok: true; session: CheckoutSession }
   | { ok: false; error: TransitionErrorCode; session: CheckoutSession };
+
+// HTTP envelope for every /checkout response, success or error.
+export interface CheckoutResponse {
+  session: CheckoutSession | null;
+  listing: Listing | null;
+  serverTime: number; // API clock at response time (the clock that decides expiry)
+  error?: string;
+}

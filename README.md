@@ -10,14 +10,15 @@ without duplicate orders, stale inventory, or silently changed prices.
 ```
 packages/shared   Types shared by API and clients (CheckoutSession, events, errors)
 apps/api          Node + TypeScript backend: state machine, store, stub services
-apps/web          (step 3) Next.js web checkout + simulated mobile route
+apps/web          Next.js (App Router) web checkout; simulated mobile route in step 4
 ```
 
 ## Running
 
 ```bash
 npm install
-npm run dev -w @seatkeeper/api   # API on http://localhost:4000
+npm run dev                      # API on :4000 + web on http://localhost:3000
+                                 # (or individually: npm run dev -w @seatkeeper/api | web)
 ./scripts/demo-api.sh            # walks price change, expiry, double-complete via curl
 npm test                         # Jest across workspaces
 npm run typecheck
@@ -48,6 +49,29 @@ Dev-only levers (not registered in production): `POST /dev/listings/:id/price`,
 **Charge safety:** `complete` dry-runs the transition with a hypothetical success *before*
 calling the gateway, so we never charge for a session that is ACTIVE, expired, stale, or already
 completed. The gateway call itself is keyed by the session's `idempotencyKey`.
+
+## Web: SSR first, then hydrate
+
+`/checkout/[id]` is a Server Component. On every request it resumes the session server-side
+(`GET /checkout/:id`, `cache: 'no-store'`, so the API re-validates expiry, price, and hold) and
+renders event, seat, price **and the starting countdown** into the HTML. The fan sees a complete,
+correct screen before any JS runs.
+
+- **`EventHeader`**: Server Component, ships zero JS (event/seat never change).
+- **`CheckoutPanel`**: client island. Also server-rendered for first paint, then hydrated. It
+  only ever replaces its copy of the session with what the API returns; it never derives state.
+- **Hydration-safe countdown**: the first render uses only props (`expiresAt - serverTime`), so
+  server and client produce the same string. Ticking starts in `useEffect`. It is anchored to the
+  **API's clock** (`serverTime` in every response), not the browser's, so a skewed laptop clock
+  (or the dev fast-forward) doesn't lie. At zero it asks the server, which decides.
+- **Pinned formatting**: `Intl` formatters pin `en-US` / `America/New_York` (venue time). Default
+  locale/zone differ between Node and the browser and would cause hydration mismatches.
+- **Buttons render disabled until hydration** (honest about not being interactive yet).
+
+**See it:** `curl localhost:3000/checkout/<id>` shows full content in raw HTML; the badge under
+the button shows "Server-rendered · hydrating…" in that HTML and switches to
+"Interactive · hydrated Nms after navigation" in the browser. Disable JS in DevTools and the
+screen still renders correctly (frozen countdown, inert buttons).
 
 ## Session state model
 
@@ -81,4 +105,7 @@ additionally deduped by the per-session `idempotencyKey`.
 ## Tradeoffs / more time
 - Hold-lost and timed-out both surface as EXPIRED; an `expiryReason` would let the client offer
   "pick another seat" vs "restart this seat".
+- Interactive actions need JS. A no-JS path could use Server Action forms (React 19 even replays
+  submissions made before hydration); skipped for scope.
+- Countdown residual error ≈ time from API response to hydration (errs generous); server is the authority.
 _(more as steps land)_

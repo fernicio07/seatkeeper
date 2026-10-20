@@ -18,12 +18,19 @@ const HTTP_STATUS: Record<ServiceErrorCode, number> = {
 };
 
 // Every response — success or failure — carries the current session when one
-// exists, so a client can always re-render from server truth.
-function send(reply: FastifyReply, result: ServiceResult, okStatus = 200) {
-  if (result.ok) return reply.code(okStatus).send({ session: result.session, listing: result.listing });
-  return reply
-    .code(HTTP_STATUS[result.error])
-    .send({ error: result.error, session: result.session ?? null, listing: result.listing ?? null });
+// exists, so a client can always re-render from server truth. `serverTime` is
+// the API's clock (the one that decides expiry), so clients can render a
+// countdown against the authority instead of their own possibly-wrong clock.
+function send(reply: FastifyReply, result: ServiceResult, serverTime: number, okStatus = 200) {
+  if (result.ok) {
+    return reply.code(okStatus).send({ session: result.session, listing: result.listing, serverTime });
+  }
+  return reply.code(HTTP_STATUS[result.error]).send({
+    error: result.error,
+    session: result.session ?? null,
+    listing: result.listing ?? null,
+    serverTime,
+  });
 }
 
 const idParams = {
@@ -41,6 +48,7 @@ export interface DevControls {
 export function buildApp(deps: CheckoutDeps, opts: { dev?: DevControls; logger?: boolean } = {}) {
   const app = Fastify({ logger: opts.logger ?? false });
   const checkout = new CheckoutService(deps);
+  const now = () => deps.clock.now();
 
   app.post<{ Body: { listingId: string } }>('/checkout', {
     schema: {
@@ -51,14 +59,14 @@ export function buildApp(deps: CheckoutDeps, opts: { dev?: DevControls; logger?:
         properties: { listingId: { type: 'string', minLength: 1 } },
       },
     },
-    handler: async (req, reply) => send(reply, await checkout.create(req.body.listingId), 201),
+    handler: async (req, reply) => send(reply, await checkout.create(req.body.listingId), now(), 201),
   });
 
   // Resume. Safe to call from any surface, any number of times: it only
   // reconciles the session with the world (expiry, price, hold).
   app.get<{ Params: { id: string } }>('/checkout/:id', {
     schema: { params: idParams },
-    handler: async (req, reply) => send(reply, await checkout.load(req.params.id)),
+    handler: async (req, reply) => send(reply, await checkout.load(req.params.id), now()),
   });
 
   app.post<{ Params: { id: string }; Body: { expectedVersion: number; acceptedPrice: number } }>(
@@ -76,7 +84,7 @@ export function buildApp(deps: CheckoutDeps, opts: { dev?: DevControls; logger?:
           },
         },
       },
-      handler: async (req, reply) => send(reply, await checkout.pay(req.params.id, req.body)),
+      handler: async (req, reply) => send(reply, await checkout.pay(req.params.id, req.body), now()),
     },
   );
 
@@ -95,9 +103,18 @@ export function buildApp(deps: CheckoutDeps, opts: { dev?: DevControls; logger?:
           },
         },
       },
-      handler: async (req, reply) => send(reply, await checkout.complete(req.params.id, req.body)),
+      handler: async (req, reply) => send(reply, await checkout.complete(req.params.id, req.body), now()),
     },
   );
+
+  // Read-only helper so the landing page can show the event before a session exists.
+  app.get<{ Params: { id: string } }>('/listings/:id', {
+    schema: { params: idParams },
+    handler: async (req, reply) => {
+      const listing = await deps.inventory.getListing(req.params.id);
+      return listing ? { listing } : reply.code(404).send({ error: 'LISTING_NOT_FOUND' });
+    },
+  });
 
   if (opts.dev) registerDevRoutes(app, opts.dev);
   return app;
